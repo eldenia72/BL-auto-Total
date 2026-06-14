@@ -1,0 +1,26 @@
+{
+  "name": "BL AutoFill — TotalEnergies",
+  "short_name": "BL AutoFill",
+  "description": "Remplissage automatique des bons de livraison TotalEnergies",
+  "start_url": "bl_autofill.html",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f0f0f0",
+  "theme_color": "#e0001b",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

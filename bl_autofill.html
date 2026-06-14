@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>BL Auto-Fill — TotalEnergies</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#e0001b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BL AutoFill">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/legacy/build/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f0f0;color:#222;min-height:100vh}
+.app{max-width:480px;margin:0 auto;padding:12px 12px 48px}
+
+.header{background:#e0001b;color:white;padding:14px 16px;border-radius:12px;margin-bottom:10px;display:flex;align-items:center;gap:12px}
+.header-icon{font-size:2rem}
+.header h1{font-size:1.2rem;font-weight:700;line-height:1.2}
+.header p{font-size:0.75rem;opacity:0.85;margin-top:2px}
+
+.card{background:white;border-radius:12px;padding:16px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.card-title{font-size:.95rem;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.step{width:22px;height:22px;background:#e0001b;color:white;border-radius:50%;font-size:.75rem;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+
+.row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.label{font-size:.85rem;color:#555;min-width:90px}
+.inp{flex:1;padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:.9rem;outline:none}
+.inp:focus{border-color:#e0001b}
+
+.upload-zone{border:2px dashed #ccc;border-radius:10px;padding:20px 16px;text-align:center;cursor:pointer;background:#fafafa;transition:all .2s}
+.upload-zone.ok{border-color:#2e7d32;background:#f1f8e9}
+.upload-zone .ico{font-size:2rem;margin-bottom:6px}
+.upload-zone .lbl{font-size:.9rem;color:#555}
+.upload-zone.ok .lbl{color:#2e7d32;font-weight:600}
+input[type=file]{display:none}
+
+.progress{margin-top:10px;background:#eee;border-radius:20px;height:6px;overflow:hidden;display:none}
+.progress-bar{height:6px;background:#e0001b;border-radius:20px;transition:width .3s}
+.msg{margin-top:8px;padding:8px 10px;border-radius:8px;font-size:.82rem;text-align:center;display:none}
+.msg.ok{background:#e8f5e9;color:#2e7d32}
+.msg.info{background:#e3f2fd;color:#1565c0}
+.msg.err{background:#ffebee;color:#c62828}
+
+.toggle-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f0f0f0;margin-bottom:12px}
+.toggle-label{font-size:.85rem;font-weight:600;flex:1}
+.toggle-wrap{position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0}
+.toggle-wrap input{opacity:0;width:0;height:0}
+.slider-track{position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:#ddd;border-radius:24px;transition:.3s}
+.slider-track:before{content:'';position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.toggle-wrap input:checked+.slider-track{background:#e0001b}
+.toggle-wrap input:checked+.slider-track:before{transform:translateX(20px)}
+
+.prod-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #f5f5f5}
+.prod-row:last-child{border-bottom:none}
+.prod-info{flex:1}
+.nom-inp{width:80px;padding:6px 8px;border:1.5px solid #ddd;border-radius:6px;font-size:.88rem;font-weight:700;outline:none;background:white}
+.nom-inp:focus{border-color:#e0001b}
+.auto-badge{font-size:.65rem;padding:1px 5px;background:#e0001b;color:white;border-radius:4px;vertical-align:middle;margin-left:4px}
+.qty-wrap{display:flex;align-items:center;gap:6px}
+.qty-inp{width:62px;padding:9px 6px;border:1.5px solid #ddd;border-radius:8px;font-size:1rem;text-align:center;outline:none;-webkit-appearance:none}
+.qty-inp:focus{border-color:#e0001b}
+.qty-unit{font-size:.8rem;color:#888;min-width:20px}
+.del-btn{background:none;border:none;color:#ccc;font-size:1rem;cursor:pointer;padding:4px 6px;border-radius:6px;line-height:1}
+.del-btn:active{background:#fee;color:#c62828}
+.empty-state{text-align:center;padding:12px 0;color:#bbb;font-size:.8rem;line-height:1.6}
+.add-prod-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:8px;border:1.5px dashed #ddd;border-radius:8px;background:none;color:#888;font-size:.82rem;cursor:pointer;margin-top:8px}
+.add-prod-btn:active{background:#f5f5f5}
+
+#doubleMode{display:flex;flex-direction:column;gap:8px}
+.client-bloc{border:1.5px solid #e8e8e8;border-radius:10px;padding:12px}
+.client-bloc.sellette{border-color:#e0001b;background:#fff9f9}
+.client-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+
+.client-tag{font-size:.72rem;font-weight:700;padding:4px 10px;border-radius:6px;white-space:nowrap;border:none;cursor:default;user-select:none;line-height:1.4}
+.tag-premier{background:#dbeafe;color:#1e40af}
+.tag-second{background:#fee2e2;color:#991b1b;cursor:pointer}
+.tag-second:active{opacity:.7}
+.client-name{font-size:.82rem;color:#555;font-weight:600}
+
+.alloc-table{width:100%;border-collapse:collapse;font-size:.83rem}
+.alloc-table th{padding:5px 6px;text-align:left;font-size:.7rem;color:#888;border-bottom:2px solid #f0f0f0;font-weight:600}
+.alloc-table td{padding:6px 6px;border-bottom:1px solid #f5f5f5;vertical-align:middle}
+.alloc-table tr.empty td{color:#bbb}
+.badge{display:inline-block;padding:2px 7px;border-radius:5px;font-size:.77rem;font-weight:700}
+.b-vide{background:#f3f4f6;color:#9ca3af}
+.mini-tag{font-size:.65rem;padding:1px 5px;border-radius:4px;font-weight:700;white-space:nowrap}
+.alloc-foot{margin-top:8px;padding:6px 10px;background:#f5f5f5;border-radius:8px;font-size:.8rem;display:flex;gap:12px;color:#555;flex-wrap:wrap}
+.alloc-foot span{color:#888}
+.alloc-foot strong{color:#222}
+.sellette-ok{margin-top:6px;font-size:.78rem;color:#2e7d32;padding:5px 8px;background:#e8f5e9;border-radius:6px}
+.sellette-warn{margin-top:6px;font-size:.78rem;color:#c62828;padding:5px 8px;background:#ffebee;border-radius:6px}
+
+.btn{display:block;width:100%;padding:15px;border:none;border-radius:12px;font-size:1rem;font-weight:700;cursor:pointer;transition:opacity .2s;text-align:center}
+.btn-gen{background:#e0001b;color:white;margin-top:10px}
+.btn-gen:disabled{opacity:.35;cursor:default}
+.btn-gen:active:not(:disabled){background:#b0001a}
+.gen-msg{margin-top:8px;padding:10px;border-radius:10px;font-size:.85rem;text-align:center;display:none}
+
+.memory-banner{font-size:.75rem;color:#555;background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:6px 10px;margin-top:4px;display:flex;align-items:center;gap:8px}
+.memory-banner button{font-size:.73rem;padding:2px 8px;border:1px solid #f9a825;border-radius:5px;background:none;color:#e65100;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <div class="header-icon">🚛</div>
+    <div>
+      <h1>BL Auto-Fill</h1>
+      <p>TotalEnergies · 9 compartiments · Cuves pleines</p>
+    </div>
+  </div>
+
+  <!-- ① Infos fixes -->
+  <div class="card">
+    <div class="card-title"><span class="step">1</span> Mes infos</div>
+    <div class="row">
+      <span class="label">Conducteur</span>
+      <input class="inp" id="conducteur" type="text" value="Maxime">
+    </div>
+    <div class="row">
+      <span class="label">Soussigné</span>
+      <input class="inp" id="soussigne" type="text" value="Le Barbanchon Maxime">
+    </div>
+    <div class="row">
+      <span class="label">Compte de</span>
+      <input class="inp" id="compte" type="text" value="Napoly">
+    </div>
+    <div class="row">
+      <span class="label">Ville</span>
+      <input class="inp" id="ville" type="text" value="Le Mans">
+    </div>
+    <div class="row">
+      <span class="label">Date BL</span>
+      <input class="inp" id="datebl" type="text" placeholder="jj.mm.aaaa">
+    </div>
+  </div>
+
+  <!-- ② Charger le BL -->
+  <div class="card">
+    <div class="card-title"><span class="step">2</span> Charger le BL PDF</div>
+    <label>
+      <div class="upload-zone" id="zone">
+        <div class="ico">📄</div>
+        <div class="lbl" id="zoneLbl">Appuie pour choisir le BL PDF</div>
+      </div>
+      <input type="file" accept=".pdf" onchange="handleFile(this)">
+    </label>
+    <div class="progress" id="prog"><div class="progress-bar" id="bar" style="width:0%"></div></div>
+    <div class="msg" id="extractMsg"></div>
+  </div>
+
+  <!-- ③ Produits / Clients -->
+  <div class="card">
+    <div class="card-title"><span class="step">3</span> Produits à livrer</div>
+
+    <!-- Toggle double dépotage -->
+    <div class="toggle-row">
+      <span class="toggle-label">Double / triple dépotage</span>
+      <label class="toggle-wrap">
+        <input type="checkbox" id="doubleDepotage" onchange="toggleDoubleDep()">
+        <span class="slider-track"></span>
+      </label>
+    </div>
+
+    <!-- Mode simple -->
+    <div id="singleMode">
+      <div id="prodFormBody"></div>
+      <button class="add-prod-btn" type="button" onclick="addProdRow('',0,false,null)">
+        ＋ Ajouter un produit
+      </button>
+    </div>
+
+    <!-- Mode double/triple -->
+    <div id="doubleMode" style="display:none">
+
+      <!-- Bloc A -->
+      <div class="client-bloc" id="blocA" style="order:1">
+        <div class="client-header">
+          <button class="client-tag tag-premier" id="tagA" onclick="setPremier('A')">🚚 1er livré</button>
+          <span class="client-name" id="clientNameA"></span>
+        </div>
+        <div id="prodFormBodyA"></div>
+        <div id="memBannerA"></div>
+        <button class="add-prod-btn" type="button" onclick="addProdRow('',0,false,'A')">
+          ＋ Ajouter un produit
+        </button>
+      </div>
+
+      <!-- Bloc B -->
+      <div class="client-bloc sellette" id="blocB" style="order:2">
+        <div class="client-header">
+          <button class="client-tag tag-second" id="tagB" onclick="setPremier('B')">⚓ 2ème · sellette — tap pour passer en 1er</button>
+          <span class="client-name" id="clientNameB"></span>
+        </div>
+        <div id="prodFormBodyB"></div>
+        <div id="memBannerB"></div>
+        <button class="add-prod-btn" type="button" onclick="addProdRow('',0,false,'B')">
+          ＋ Ajouter un produit
+        </button>
+      </div>
+
+      <!-- Bloc C (triple dépotage — masqué par défaut) -->
+      <div class="client-bloc sellette" id="blocC" style="order:3;display:none">
+        <div class="client-header">
+          <button class="client-tag tag-second" id="tagC" onclick="setPremier('C')">⚓ 3ème · sellette — tap pour passer en 1er</button>
+          <span class="client-name" id="clientNameC"></span>
+        </div>
+        <div id="prodFormBodyC"></div>
+        <div id="memBannerC"></div>
+        <button class="add-prod-btn" type="button" onclick="addProdRow('',0,false,'C')">
+          ＋ Ajouter un produit
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ④ Allocation -->
+  <div class="card" id="allocCard" style="display:none">
+    <div class="card-title"><span class="step">4</span> Répartition cuves</div>
+    <div id="allocOut"></div>
+  </div>
+
+  <!-- ⑤ Générer -->
+  <button class="btn btn-gen" id="genBtn" onclick="genPDF()" disabled>
+    📄 Générer le BL rempli
+  </button>
+  <div class="gen-msg" id="genMsg"></div>
+
+</div><!-- .app -->
+<script>
+// ── PDF.js ────────────────────────────────────────────────────────
+pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+
+// ── Constantes ────────────────────────────────────────────────────
+const CAPS = [4,6,5,2,3,9,3,2,7]; // capacités cuves 1-9
+const SELLETTE_CUVES = [0, 1];     // indices cuves sellette (0=cuve1, 1=cuve2)
+
+// Couleurs badges produit
+const BADGE_COLORS = [
+  'background:#dbeafe;color:#1e40af',
+  'background:#dcfce7;color:#15803d',
+  'background:#fef9c3;color:#854d0e',
+  'background:#fce7f3;color:#9d174d',
+  'background:#ede9fe;color:#6d28d9',
+  'background:#ffedd5;color:#9a3412',
+  'background:#f0fdf4;color:#166534',
+];
+
+// Codes produit Total → noms courts
+const KNOWN_CODES = {
+  'GOMO14FR'  : 'GO',
+  'GOMO14FRA1': 'GO',  'GOMO14FRA2': 'GO1',  'GOMO14FRA3': 'GO+', 'GOMO14FRA4': 'GO+',
+  'MG9801FRA1': '98T', 'MG9513FRA1': 'E10T','MGETHA95FR': 'E85', 'MGOPTI14FR': 'GO+',
+};
+
+// ── Coordonnées PDF (pdf-lib : y depuis le bas) ───────────────────
+const P1X = [347.6,384.0,421.5,459.75,497.65,535.9,573.75,610.1,647.6];
+const P1 = {
+  produit:394.2, produit2:301.9, depot:375.8, qte:357.0, reste:339.0, cap:321.0,
+  nomX:100,    nomY:118,
+  compteX:310, compteY:118,
+  villeX:382,  villeY:107,  dateX:495, dateY:107
+};
+// Mode double : soussigné/compte décalés vers le bas (y=77)
+// → ville/date suivent le même delta (118→77 = -41 → 107→66)
+const P1D = {
+  ...P1,
+  nomX:90,     nomY:77,
+  compteX:320, compteY:77,
+  villeX:382,  villeY:60,
+  dateX:495,   dateY:60,
+};
+
+// Pages BL (2-5 ou 2-7)
+const BLX = [97.85,133.85,173.6,216.75,262.15,308.25,355.1,402.35,448.85];
+const BL  = { num:148.35, vol:119.95, prod:105.65, nomX:665, nomY:315, dateX:610, dateY:299 };
+
+// ── State ─────────────────────────────────────────────────────────
+let pdfBytes      = null;
+let allocation    = null;
+let allocSectionA = null;
+let allocSectionB = null;
+let allocSectionC = null;
+let isDoubleDep   = false;
+let isTripleDep   = false;
+let clientPremier = 'A';
+let clientSecond  = 'B';
+let pageToSection = {};
+let clientNames   = {A:'', B:'', C:''};
+let prodRowCtr    = 0;
+
+// ── localStorage ──────────────────────────────────────────────────
+const LS_STATE   = 'bl_autofill_v2_state';
+const LS_CLIENTS = 'bl_autofill_v2_clients';
+
+function saveState() {
+  try {
+    localStorage.setItem(LS_STATE, JSON.stringify({
+      isDoubleDep, isTripleDep, clientPremier,
+      clientNameA: clientNames.A,
+      clientNameB: clientNames.B,
+      clientNameC: clientNames.C,
+      prodsA: getFormProducts('A').map(p=>({nom:p.nom,qty:p.qty})),
+      prodsB: getFormProducts('B').map(p=>({nom:p.nom,qty:p.qty})),
+      prodsC: getFormProducts('C').map(p=>({nom:p.nom,qty:p.qty})),
+      prods:  getFormProducts().map(p=>({nom:p.nom,qty:p.qty})),
+      at: Date.now()
+    }));
+  } catch(e) {}
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(LS_STATE);
+    if (!raw) return false;
+    const s = JSON.parse(raw);
+    if (!s.at || Date.now() - s.at > 20*60*60*1000) return false;
+
+    isDoubleDep   = !!s.isDoubleDep;
+    isTripleDep   = !!s.isTripleDep;
+    clientPremier = s.clientPremier || 'A';
+    clientSecond  = clientPremier === 'A' ? 'B' : 'A';
+    clientNames   = {A: s.clientNameA||'', B: s.clientNameB||'', C: s.clientNameC||''};
+
+    document.getElementById('doubleDepotage').checked = isDoubleDep;
+    document.getElementById('singleMode').style.display  = isDoubleDep ? 'none' : '';
+    document.getElementById('doubleMode').style.display   = isDoubleDep ? '' : 'none';
+    document.getElementById('blocC').style.display        = isTripleDep ? '' : 'none';
+
+    if (isDoubleDep) {
+      if (s.prodsA) s.prodsA.forEach(p => addProdRow(p.nom, p.qty, false, 'A'));
+      else showEmptyState('A');
+      if (s.prodsB) s.prodsB.forEach(p => addProdRow(p.nom, p.qty, false, 'B'));
+      else showEmptyState('B');
+      if (isTripleDep) {
+        if (s.prodsC) s.prodsC.forEach(p => addProdRow(p.nom, p.qty, false, 'C'));
+        else showEmptyState('C');
+        document.getElementById('clientNameC').textContent = clientNames.C;
+      }
+      document.getElementById('clientNameA').textContent = clientNames.A;
+      document.getElementById('clientNameB').textContent = clientNames.B;
+      updateBlocHeaders();
+    } else {
+      if (s.prods) s.prods.forEach(p => addProdRow(p.nom, p.qty, false, null));
+      else showEmptyState(null);
+    }
+    return true;
+  } catch(e) { return false; }
+}
+
+function saveClientMemory(name, prods) {
+  if (!name || !prods.length) return;
+  try {
+    const mem = JSON.parse(localStorage.getItem(LS_CLIENTS) || '{}');
+    mem[name] = prods.map(p=>({nom:p.nom,qty:p.qty}));
+    localStorage.setItem(LS_CLIENTS, JSON.stringify(mem));
+  } catch(e) {}
+}
+
+function getClientMemory(name) {
+  try {
+    const mem = JSON.parse(localStorage.getItem(LS_CLIENTS) || '{}');
+    return mem[name] || null;
+  } catch(e) { return null; }
+}
+
+function showMemBanner(section, name, savedProds) {
+  const el = document.getElementById('memBanner' + section);
+  if (!el) return;
+  const summary = savedProds.map(p=>`${p.nom} ${p.qty}m³`).join(' · ');
+  el.innerHTML = `
+    <div class="memory-banner">
+      💾 Mémorisé : ${escHtml(summary)}
+      <button onclick="applyMemory('${section}','${escHtml(name)}')">Appliquer</button>
+    </div>`;
+}
+
+function applyMemory(section, name) {
+  const mem = getClientMemory(name);
+  if (!mem) return;
+  clearFormRows(section);
+  mem.forEach(p => addProdRow(p.nom, p.qty, false, section));
+  document.getElementById('memBanner' + section).innerHTML = '';
+}
+
+// ── Init ──────────────────────────────────────────────────────────
+(function init() {
+  document.getElementById('datebl').value = todayFR();
+  const restored = loadState();
+  if (!restored) showEmptyState(null);
+  calcul();
+})();
+
+// ── Gestion du mode double/triple dépotage ────────────────────────
+function toggleDoubleDep() {
+  isDoubleDep = document.getElementById('doubleDepotage').checked;
+  isTripleDep = false;
+  document.getElementById('singleMode').style.display = isDoubleDep ? 'none' : '';
+  document.getElementById('doubleMode').style.display  = isDoubleDep ? '' : 'none';
+  document.getElementById('blocC').style.display = 'none';
+  allocation = null; allocSectionA = null; allocSectionB = null; allocSectionC = null;
+  pageToSection = {};
+  clientNames = {A:'', B:'', C:''};
+
+  if (isDoubleDep) {
+    if (!document.querySelector('#prodFormBodyA .prod-row')) showEmptyState('A');
+    if (!document.querySelector('#prodFormBodyB .prod-row')) showEmptyState('B');
+    updateBlocHeaders();
+  }
+  calcul();
+}
+
+function setPremier(section) {
+  if (clientPremier === section) return;
+  clientPremier = section;
+  if (!isTripleDep) clientSecond = section === 'A' ? 'B' : 'A';
+  updateBlocHeaders();
+  calcul();
+}
+
+function updateBlocHeaders() {
+  const secs = isTripleDep ? ['A','B','C'] : ['A','B'];
+  const ORDER = ['A','B','C'];
+  const firstIdx = ORDER.indexOf(clientPremier);
+  const orderedSections = isTripleDep
+    ? [ORDER[firstIdx], ORDER[(firstIdx+1)%3], ORDER[(firstIdx+2)%3]]
+    : [clientPremier, clientPremier==='A'?'B':'A'];
+
+  secs.forEach(sec => {
+    const tag  = document.getElementById('tag' + sec);
+    const bloc = document.getElementById('bloc' + sec);
+    if (!tag || !bloc) return;
+    const pos = orderedSections.indexOf(sec);
+    if (isTripleDep) {
+      if (pos === 0) { tag.textContent='🚚 1er livré — tap pour changer'; tag.className='client-tag tag-premier'; bloc.classList.remove('sellette'); bloc.style.order='1'; }
+      else if (pos === 1) { tag.textContent='2ème — tap pour passer en 1er'; tag.className='client-tag tag-second'; bloc.classList.remove('sellette'); bloc.style.order='2'; }
+      else { tag.textContent='⚓ 3ème · sellette — tap pour passer en 1er'; tag.className='client-tag tag-second'; bloc.classList.add('sellette'); bloc.style.order='3'; }
+    } else {
+      if (pos === 0) { tag.textContent='🚚 1er livré'; tag.className='client-tag tag-premier'; bloc.classList.remove('sellette'); bloc.style.order='1'; }
+      else { tag.textContent='⚓ 2ème · sellette — tap pour passer en 1er'; tag.className='client-tag tag-second'; bloc.classList.add('sellette'); bloc.style.order='2'; }
+    }
+  });
+}
+
+// ── Gestion formulaire ────────────────────────────────────────────
+function showEmptyState(client) {
+  const bodyId = client ? `prodFormBody${client}` : 'prodFormBody';
+  const body = document.getElementById(bodyId);
+  if (body && !body.querySelector('.prod-row')) {
+    body.innerHTML = `<div class="empty-state">Charge un BL ou ajoute un produit ↓</div>`;
+  }
+}
+
+function addProdRow(nom='', qty=0, isAuto=false, client=null) {
+  const bodyId = client ? `prodFormBody${client}` : 'prodFormBody';
+  const body   = document.getElementById(bodyId);
+  body.querySelector('.empty-state')?.remove();
+  const id  = prodRowCtr++;
+  const div = document.createElement('div');
+  div.className = 'prod-row';
+  div.dataset.id = id; div.dataset.client = client || ''; div.id = 'row_' + id;
+  div.innerHTML = `
+    <div class="prod-info">
+      <input class="nom-inp" id="nom_${id}" type="text"
+             value="${escHtml(nom)}" placeholder="GO, E85…"
+             onchange="calcul()" oninput="calcul()">
+      ${isAuto ? `<span class="auto-badge">auto</span>` : ''}
+    </div>
+    <div class="qty-wrap">
+      <input class="qty-inp" id="qty_${id}" type="number"
+             min="0" max="50" value="${qty}"
+             inputmode="numeric" pattern="[0-9]*"
+             onchange="calcul()" oninput="calcul()">
+      <span class="qty-unit">m³</span>
+    </div>
+    <button class="del-btn" type="button" onclick="delRow(${id})">✕</button>`;
+  body.appendChild(div);
+  calcul();
+}
+
+function delRow(id) {
+  document.getElementById('row_' + id)?.remove();
+  calcul();
+}
+
+function clearFormRows(client) {
+  document.getElementById(client ? `prodFormBody${client}` : 'prodFormBody').innerHTML = '';
+}
+
+function getFormProducts(client=null) {
+  const rows = document.querySelectorAll(`#${client?`prodFormBody${client}`:'prodFormBody'} .prod-row[data-id]`);
+  const out = [];
+  rows.forEach((row, idx) => {
+    const rid = row.dataset.id;
+    const nom = (document.getElementById('nom_'+rid)?.value||'').trim();
+    const qty = parseInt(document.getElementById('qty_'+rid)?.value)||0;
+    if (nom) out.push({nom, qty, colorIdx:idx});
+  });
+  return out;
+}
+
+function makeQtys(prods) {
+  const q={};
+  for(const p of prods) if(p.qty>0) q[p.nom]=(q[p.nom]||0)+p.qty;
+  return q;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Extraction PDF.js ─────────────────────────────────────────────
+function extractCumuls(page1Items) {
+  const PROD_RE = /^[A-Z]{2,8}\d{2,6}[A-Z]{0,4}\d{0,2}$/;
+  const QTY_RE  = /^\d{1,3}(?:[.,]\d*)?$/;
+  const cumuls  = [];
+  const codeItems = page1Items.filter(i => PROD_RE.test(i.text) && i.text.length >= 8);
+  for (const ci of codeItems) {
+    const nom = KNOWN_CODES[ci.text];
+    if (!nom) continue;
+    const cands = page1Items
+      .filter(i => Math.abs(i.y - ci.y) < 25 && i !== ci && QTY_RE.test(i.text))
+      .sort((a,b) => Math.abs(a.x - ci.x) - Math.abs(b.x - ci.x));
+    if (cands.length) {
+      const qty = Math.round(parseFloat(cands[0].text.replace(',','.')));
+      if (qty >= 1 && qty <= 45 && !cumuls.some(c=>c.nom===nom)) cumuls.push({nom, qty});
+    }
+  }
+  return cumuls;
+}
+
+function extractQtyPairs(items) {
+  const pairs = [];
+  const QTY_M3  = /^(\d{1,2}(?:[.,]\d*)?)\s*[Mm]3?$/;
+  const M3_ONLY = /^[Mm]3?$/;
+  const NUM_ONLY = /^\d{1,2}(?:[.,]\d*)?$/;
+  function toInt(s){ return Math.round(parseFloat(s.replace(',','.'))); }
+  for (let i=0; i<items.length; i++) {
+    const t = items[i].text;
+    const f = t.match(QTY_M3);
+    if (f) {
+      const n = toInt(f[1]);
+      if (n>=1 && n<=45) pairs.push({qty:n, y:items[i].y, page:items[i].page});
+      continue;
+    }
+    if (M3_ONLY.test(t)) {
+      for (let j=i-1; j>=Math.max(0,i-6); j--) {
+        if (items[j].page !== items[i].page) break;
+        if (NUM_ONLY.test(items[j].text)) {
+          const n = toInt(items[j].text);
+          if (n>=1 && n<=45) {
+            if (!pairs.some(q=>q.page===items[i].page && Math.abs(q.y-items[i].y)<3))
+              pairs.push({qty:n, y:items[i].y, page:items[i].page});
+            break;
+          }
+        }
+      }
+    }
+  }
+  return pairs;
+}
+
+function extractClientsFromBL(items, cumuls, numPages) {
+  const PROD_RE = /^[A-Z]{2,8}\d{2,6}[A-Z]{0,4}\d{0,2}$/;
+  const result  = [];
+  const SECTIONS = ['A','B','C'];
+  const maxClientPage = numPages >= 7 ? 4 : 3;
+
+  for (let pageNum=2; pageNum<=maxClientPage && pageNum<=numPages; pageNum++) {
+    const pi = items.filter(i => i.page === pageNum);
+    if (!pi.length) continue;
+
+    // Nom client : y≈525 (pdf.js bas), x>620
+    const nameItems = pi.filter(i => i.x>620 && i.y>508 && i.y<548).sort((a,b)=>a.x-b.x);
+    const clientName = nameItems.map(i=>i.text).join(' ').trim();
+
+    // Codes produit présents sur la page
+    const pageCodes = new Set(pi.filter(i=>PROD_RE.test(i.text)&&i.text.length>=8).map(i=>i.text));
+    console.log(`[BL page ${pageNum}] codes:`, [...pageCodes].join('|'), '| nom:', clientName);
+
+    const QTY_RE_P = /^\d{1,3}(?:[.,]\d*)?$/;
+    const nomSet = new Set();
+    for (const code of pageCodes) if (KNOWN_CODES[code]) nomSet.add(KNOWN_CODES[code]);
+    let prods = cumuls.filter(c => nomSet.has(c.nom));
+
+    // Fallback 1 : matching via quantités dans les cumuls
+    if (!prods.length && cumuls.length) {
+      const norm = pi.filter(i=>i.y>180).map(i=>({...i, page:1}));
+      const qtyPairs = extractQtyPairs(norm);
+      const foundQtys = new Set(qtyPairs.map(q=>q.qty));
+      prods = cumuls.filter(c => foundQtys.has(c.qty));
+    }
+
+    // Fallback 2 : matcher codes ↔ quantités sur la même page (même y ±20pt)
+    if (!prods.length && nomSet.size > 0) {
+      const qtyPairsP = extractQtyPairs(pi);
+      const codeItemsP = pi.filter(i => PROD_RE.test(i.text) && i.text.length >= 8 && KNOWN_CODES[i.text]);
+      const matchedP = [];
+      const usedQtyIdx = new Set();
+      for (const ci of codeItemsP) {
+        const nom = KNOWN_CODES[ci.text];
+        if (!nom) continue;
+        const idx = qtyPairsP.findIndex((q,k) => !usedQtyIdx.has(k) && Math.abs(q.y - ci.y) < 20);
+        if (idx >= 0) {
+          usedQtyIdx.add(idx);
+          if (!matchedP.some(m=>m.nom===nom)) matchedP.push({nom, qty: qtyPairsP[idx].qty});
+        }
+      }
+      prods = matchedP.length > 0 ? matchedP : [...nomSet].map(nom => ({nom, qty: 0}));
+    }
+
+    const section = SECTIONS[pageNum - 2];
+    const copyOffset = numPages >= 7 ? 3 : 2;
+    result.push({clientName, prods, section, pages:[pageNum, pageNum+copyOffset]});
+  }
+
+  // Produits non assignés → section vide
+  if (result.length >= 2) {
+    const allNoms = new Set(result.flatMap(r=>r.prods.map(p=>p.nom)));
+    const unassigned = cumuls.filter(c => !allNoms.has(c.nom));
+    if (unassigned.length) {
+      const emptySection = result.find(r=>r.prods.length===0);
+      if (emptySection && result.some(r=>r.prods.length>0))
+        emptySection.prods.push(...unassigned);
+    }
+  }
+
+  console.log('[BL] résultat:', result.map(c=>`[${c.section}] "${c.clientName}" → ${c.prods.map(p=>p.nom+'='+p.qty).join(',')}`).join(' | '));
+  return result;
+}
+
+// ── Upload + Extraction ───────────────────────────────────────────
+async function handleFile(input) {
+  const file = input.files[0]; if(!file) return;
+  pdfBytes = await file.arrayBuffer();
+  document.getElementById('zone').classList.add('ok');
+  document.getElementById('zoneLbl').textContent = '✅ ' + file.name;
+  const prog=document.getElementById('prog'), bar=document.getElementById('bar'), msg=document.getElementById('extractMsg');
+  prog.style.display='block'; bar.style.width='20%';
+  msg.style.display='block'; msg.className='msg info'; msg.textContent='🔍 Lecture du PDF…';
+
+  try {
+    const pdf = await pdfjsLib.getDocument({data:pdfBytes.slice(0),useWorkerFetch:false,isEvalSupported:false}).promise;
+    bar.style.width='40%';
+    let items = [];
+    for (let p=1; p<=pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const tc   = await page.getTextContent();
+      for (const it of tc.items) {
+        const t = it.str.trim();
+        if (!t) continue;
+        items.push({text:t, x:Math.round(it.transform[4]), y:Math.round(it.transform[5]), page:p});
+      }
+    }
+    bar.style.width='60%';
+
+    // Date
+    let detectedDate = null;
+    for (const it of items) {
+      const m = it.text.match(/^(\d{2})[.\/\-](\d{2})[.\/\-](\d{4})$/);
+      if (m && parseInt(m[3])>=2020) { detectedDate=`${m[1]}.${m[2]}.${m[3]}`; break; }
+    }
+    if (!detectedDate) {
+      const m = items.map(i=>i.text).join(' ').match(/(\d{2})[.\/](\d{2})[.\/](\d{4})/);
+      if (m && parseInt(m[3])>=2020) detectedDate=`${m[1]}.${m[2]}.${m[3]}`;
+    }
+    if (detectedDate) document.getElementById('datebl').value = detectedDate;
+
+    const cumuls = extractCumuls(items.filter(i=>i.page===1));
+    bar.style.width='80%';
+
+    // Auto-activation mode multi-client pour BL 5 ou 7 pages (Total standard)
+    if (pdf.numPages===5 || pdf.numPages===7) {
+      isDoubleDep = true;
+      document.getElementById('doubleDepotage').checked = true;
+      document.getElementById('singleMode').style.display = 'none';
+      document.getElementById('doubleMode').style.display = '';
+    }
+
+    if (!isDoubleDep) {
+      // ── Mode simple ───────────────────────────────────────────
+      clearFormRows(null);
+      let found = 0;
+      if (cumuls.length > 0) {
+        for (const c of cumuls) { addProdRow(c.nom, c.qty, true, null); found++; }
+        msg.className='msg ok'; msg.textContent=`✅ ${found} produit(s) détectés${detectedDate?' · '+document.getElementById('datebl').value:''}`;
+      } else {
+        // Matching exact : PROD_RE + KNOWN_CODES[text] pour éviter les collisions de préfixes
+        // (ex: 'GOMO14FR' incluait 'GOMO14FRA2' et volait sa quantité)
+        const PROD_RE_S = /^[A-Z]{2,8}\d{2,6}[A-Z]{0,4}\d{0,2}$/;
+        const qtyPairs=extractQtyPairs(items), usedIdxs=new Set(), seenNoms=new Set();
+        const codeItemsS = items.filter(i => PROD_RE_S.test(i.text) && i.text.length>=8 && KNOWN_CODES[i.text]);
+        codeItemsS.sort((a,b)=>b.y-a.y);
+        for (const ci of codeItemsS) {
+          const nom = KNOWN_CODES[ci.text];
+          if (!nom || seenNoms.has(nom)) continue;
+          const cands=qtyPairs.map((q,idx)=>({...q,idx})).filter(q=>q.page===ci.page&&!usedIdxs.has(q.idx));
+          if (!cands.length) continue;
+          cands.sort((a,b)=>Math.abs(a.y-ci.y)-Math.abs(b.y-ci.y));
+          const best=cands[0];
+          if (Math.abs(best.y-ci.y)<=40) { addProdRow(nom,best.qty,true,null); usedIdxs.add(best.idx); seenNoms.add(nom); found++; }
+        }
+        if (found > 0) { msg.className='msg info'; msg.textContent=`⚠️ ${found} produit(s) via codes — vérifie les noms`; }
+        else { showEmptyState(null); msg.className='msg info'; msg.textContent='📝 Aucun produit détecté — saisis manuellement'; }
+      }
+
+    } else {
+      // ── Mode double/triple : auto-détection des clients ──────
+      const detected = extractClientsFromBL(items, cumuls, pdf.numPages);
+
+      if (pdf.numPages===5) {
+        pageToSection = {2:'A',3:'B',4:'A',5:'B'};
+      } else if (pdf.numPages===7) {
+        pageToSection = {2:'A',3:'B',4:'C',5:'A',6:'B',7:'C'};
+      } else {
+        pageToSection = {};
+        for (const c of detected) for (const p of c.pages) pageToSection[p] = c.section;
+      }
+      console.log('[BL] pageToSection:', JSON.stringify(pageToSection));
+
+      isTripleDep = detected.length >= 3;
+      document.getElementById('blocC').style.display = isTripleDep ? '' : 'none';
+
+      // Quantités page 1 col. droite (x>700, y=270-430) — source unique si pages 2-5 sans texte numérique
+      const p1RightQtys = items
+        .filter(i => i.page===1 && i.x>700 && i.y>270 && i.y<400 && /^\d{1,3}(?:[.,]\d*)?$/.test(i.text))
+        .map(i => ({qty: Math.round(parseFloat(i.text.replace(',','.'))), y: i.y}))
+        .filter(i => i.qty>=1 && i.qty<=45)
+        .sort((a,b) => b.y - a.y); // top de page d'abord (y décroissant)
+      console.log('[p1Qtys]', p1RightQtys.map(q=>q.qty+'@y='+q.y).join(', '));
+
+      // Assigner les qtys de page 1 aux produits dont qty===0
+      let qtyPool = p1RightQtys.map(q=>q.qty);
+      function assignP1Qtys(cl) {
+        const zeros = cl.prods.filter(p=>p.qty===0);
+        if (!zeros.length || !qtyPool.length) return;
+        if (zeros.length === 1 && qtyPool.length >= 1) {
+          // 1 produit : prend la plus grande valeur disponible
+          const maxIdx = qtyPool.indexOf(Math.max(...qtyPool));
+          zeros[0].qty = qtyPool.splice(maxIdx, 1)[0];
+        } else if (zeros.length <= qtyPool.length) {
+          // N produits : prend les N premières qtys du pool
+          zeros.forEach(p => { p.qty = qtyPool.shift(); });
+        }
+      }
+
+      const fillBloc = (sec, cl) => {
+        clearFormRows(sec);
+        document.getElementById('memBanner'+sec).innerHTML = '';
+        if (cl.prods.length > 0) cl.prods.forEach(p=>addProdRow(p.nom,p.qty,true,sec));
+        else { showEmptyState(sec); const mem=getClientMemory(cl.clientName); if(mem) showMemBanner(sec,cl.clientName,mem); }
+        document.getElementById('clientName'+sec).textContent = cl.clientName;
+      };
+
+      if (detected.length >= 3) {
+        const cA=detected.find(c=>c.section==='A')||detected[0];
+        const cB=detected.find(c=>c.section==='B')||detected[1];
+        const cC=detected.find(c=>c.section==='C')||detected[2];
+        assignP1Qtys(cA); assignP1Qtys(cB); assignP1Qtys(cC);
+        clientNames.A=cA.clientName; clientNames.B=cB.clientName; clientNames.C=cC.clientName;
+        fillBloc('A',cA); fillBloc('B',cB); fillBloc('C',cC);
+        const total=[...cA.prods,...cB.prods,...cC.prods].reduce((s,p)=>s+p.qty,0);
+        msg.className='msg ok';
+        msg.textContent=`✅ 3 clients détectés · ${total}m³ · ${[cA,cB,cC].map(c=>c.clientName||'?').join(' / ')}`;
+
+      } else if (detected.length >= 2) {
+        const cA=detected.find(c=>c.section==='A')||detected[0];
+        const cB=detected.find(c=>c.section==='B')||detected[1];
+        assignP1Qtys(cA); assignP1Qtys(cB);
+        clientNames.A=cA.clientName; clientNames.B=cB.clientName;
+        fillBloc('A',cA); fillBloc('B',cB);
+        const total=[...cA.prods,...cB.prods].reduce((s,p)=>s+p.qty,0);
+        msg.className='msg ok';
+        msg.textContent=`✅ 2 clients détectés · ${total}m³${cA.clientName?' · '+cA.clientName+' / '+cB.clientName:''}`;
+
+      } else if (detected.length === 1) {
+        const cA=detected[0];
+        clientNames.A=cA.clientName;
+        fillBloc('A',cA);
+        clearFormRows('B'); showEmptyState('B');
+        msg.className='msg info';
+        msg.textContent=`⚠️ 1 client détecté${cA.clientName?' ('+cA.clientName+')':''} — entre le 2ème manuellement`;
+
+      } else {
+        clearFormRows('A');
+        if (cumuls.length>0) { cumuls.forEach(c=>addProdRow(c.nom,c.qty,true,'A')); msg.className='msg info'; msg.textContent='📝 Clients non détectés — cumuls dans section A'; }
+        else { showEmptyState('A'); msg.className='msg info'; msg.textContent='📝 Aucun produit détecté — saisis manuellement'; }
+        clearFormRows('B'); showEmptyState('B');
+      }
+      updateBlocHeaders();
+    }
+
+    bar.style.width='100%'; setTimeout(()=>prog.style.display='none',400);
+    calcul();
+  } catch(e) {
+    console.error(e);
+    bar.style.width='100%'; setTimeout(()=>prog.style.display='none',400);
+    showEmptyState(isDoubleDep?'A':null); if(isDoubleDep) showEmptyState('B');
+    msg.className='msg err'; msg.textContent='❌ '+e.message+' — saisis manuellement';
+    calcul();
+  }
+}
+
+// ── Algorithme allocation ─────────────────────────────────────────
+function allouerDansCuves(qtys, availCuves, requiredOne=[]) {
+  const entries = Object.entries(qtys).filter(([,q])=>q>0).sort((a,b)=>b[1]-a[1]);
+  if (!entries.length) return new Array(9).fill(null);
+  const assign = new Array(9).fill(null), used = new Array(9).fill(true);
+  availCuves.forEach(i=>used[i]=false);
+  const needReq = requiredOne.length > 0;
+  let result = null;
+
+  function subs(avail, target) {
+    const out = [];
+    function bt(s,rem,ch) {
+      if (rem===0) { out.push([...ch]); return; }
+      for (let k=s; k<avail.length; k++) {
+        if (CAPS[avail[k]] > rem) continue;
+        ch.push(avail[k]); bt(k+1, rem-CAPS[avail[k]], ch); ch.pop();
+      }
+    }
+    bt(0, target, []);
+    return out;
+  }
+
+  function bt(idx, reqSat) {
+    if (idx === entries.length) {
+      if (!needReq || reqSat) { result = [...assign]; return true; }
+      return false;
+    }
+    const [nom,qty] = entries[idx];
+    const avail = [];
+    for (let i=0; i<9; i++) if (!used[i]) avail.push(i);
+    const combos = subs(avail, qty);
+    for (const combo of combos) {
+      const reqMet = reqSat || combo.some(i=>requiredOne.includes(i));
+      combo.forEach(i=>{ assign[i]=nom; used[i]=true; });
+      if (bt(idx+1, reqMet)) return true;
+      combo.forEach(i=>{ assign[i]=null; used[i]=false; });
+    }
+    return false;
+  }
+
+  bt(0, false);
+  return result;
+}
+
+// Retourne TOUTES les allocations valides (pas seulement la première)
+function allouerTout(qtys, availCuves, requiredOne=[]) {
+  const entries = Object.entries(qtys).filter(([,q])=>q>0).sort((a,b)=>b[1]-a[1]);
+  if (!entries.length) return [new Array(9).fill(null)];
+  const results = [];
+  const assign = new Array(9).fill(null), used = new Array(9).fill(true);
+  availCuves.forEach(i=>used[i]=false);
+  const needReq = requiredOne.length > 0;
+  function subs(avail, target) {
+    const out = [];
+    function bt(s,rem,ch) {
+      if (rem===0){out.push([...ch]);return;}
+      for(let k=s;k<avail.length;k++){if(CAPS[avail[k]]>rem)continue;ch.push(avail[k]);bt(k+1,rem-CAPS[avail[k]],ch);ch.pop();}
+    }
+    bt(0,target,[]);return out;
+  }
+  function bt(idx, reqSat) {
+    if (idx===entries.length){if(!needReq||reqSat)results.push([...assign]);return;}
+    const [nom,qty]=entries[idx];
+    const avail=[];for(let i=0;i<9;i++)if(!used[i])avail.push(i);
+    for(const combo of subs(avail,qty)){
+      const reqMet=reqSat||combo.some(i=>requiredOne.includes(i));
+      combo.forEach(i=>{assign[i]=nom;used[i]=true;});
+      bt(idx+1,reqMet);
+      combo.forEach(i=>{assign[i]=null;used[i]=false;});
+    }
+  }
+  bt(0,false);return results;
+}
+
+function allouerDouble(qtysFirst, qtysSecond, ignoreSellette=false) {
+  const ALL = [0,1,2,3,4,5,6,7,8];
+  const req  = ignoreSellette ? [] : SELLETTE_CUVES;
+  // Essaie toutes les allocations possibles pour le 2ème client jusqu'à en trouver une
+  // qui laisse assez de cuves viables pour le 1er client
+  for (const aSecond of allouerTout(qtysSecond, ALL, req)) {
+    const used  = new Set(aSecond.map((v,i)=>v!==null?i:-1).filter(i=>i>=0));
+    const libre = ALL.filter(i=>!used.has(i));
+    const aFirst = allouerDansCuves(qtysFirst, libre, []);
+    if (aFirst) return {allocFirst:aFirst, allocSecond:aSecond};
+  }
+  return null;
+}
+
+// Ordre : First=1er livré, Second=2ème, Third=3ème (sellette)
+function allouerTriple(qtysFirst, qtysSecond, qtysThird) {
+  const ALL = [0,1,2,3,4,5,6,7,8];
+  const aThird = allouerDansCuves(qtysThird, ALL, SELLETTE_CUVES);
+  if (!aThird) return null;
+  const usedThird = new Set(aThird.map((v,i)=>v!==null?i:-1).filter(i=>i>=0));
+  const libreApresThird = ALL.filter(i=>!usedThird.has(i));
+  const aSecond = allouerDansCuves(qtysSecond, libreApresThird, []);
+  if (!aSecond) return null;
+  const usedSecond = new Set(aSecond.map((v,i)=>v!==null?i:-1).filter(i=>i>=0));
+  const libreApresSecond = libreApresThird.filter(i=>!usedSecond.has(i));
+  const aFirst = allouerDansCuves(qtysFirst, libreApresSecond, []);
+  if (!aFirst) return null;
+  return {allocFirst:aFirst, allocSecond:aSecond, allocThird:aThird};
+}
+
+// ── Recalcul allocation ───────────────────────────────────────────
+function calcul() {
+  const card=document.getElementById('allocCard'), out=document.getElementById('allocOut'), btn=document.getElementById('genBtn');
+
+  if (!isDoubleDep) {
+    // ── Mode simple ───────────────────────────────────────────────
+    const prods=getFormProducts(), qtys=makeQtys(prods);
+    const total=Object.values(qtys).reduce((a,b)=>a+b,0), maxCap=CAPS.reduce((a,b)=>a+b,0);
+    if (total===0) { card.style.display='none'; btn.disabled=true; allocation=null; saveState(); return; }
+    card.style.display='block';
+    if (total>maxCap) { out.innerHTML=`<div class="msg err" style="display:block">❌ Total ${total} m³ > capacité (${maxCap} m³)</div>`; btn.disabled=true; allocation=null; saveState(); return; }
+    allocation = allouerDansCuves(qtys, [0,1,2,3,4,5,6,7,8], []);
+    if (!allocation) { out.innerHTML=`<div class="msg err" style="display:block">❌ Impossible en cuves pleines.<br><small>${CAPS.join(', ')} m³</small></div>`; btn.disabled=true; saveState(); return; }
+    const cm={};
+    prods.forEach((p,i)=>{ cm[p.nom]=cm[p.nom]||BADGE_COLORS[i%BADGE_COLORS.length]; });
+    let loaded=0, html=`<table class="alloc-table"><tr><th>#</th><th>Cap.</th><th>Produit</th></tr>`;
+    for (let i=0; i<9; i++) {
+      if (allocation[i]) { loaded+=CAPS[i]; const c=cm[allocation[i]]||BADGE_COLORS[0]; html+=`<tr><td><strong>${i+1}</strong></td><td>${CAPS[i]}m³</td><td><span class="badge" style="${c}">${escHtml(allocation[i])}</span></td></tr>`; }
+      else { html+=`<tr class="empty"><td><strong>${i+1}</strong></td><td>${CAPS[i]}m³</td><td><span class="badge b-vide">— vide</span></td></tr>`; }
+    }
+    html += `</table><div class="alloc-foot"><span>Chargé</span><strong>${loaded} m³ / ${maxCap} m³</strong></div>`;
+    out.innerHTML=html; btn.disabled=!pdfBytes;
+
+  } else if (isTripleDep) {
+    // ── Mode triple ───────────────────────────────────────────────
+    const prodsA=getFormProducts('A'), prodsB=getFormProducts('B'), prodsC=getFormProducts('C');
+    const qtysA=makeQtys(prodsA), qtysB=makeQtys(prodsB), qtysC=makeQtys(prodsC);
+    const totalNum=Object.values(qtysA).reduce((a,b)=>a+b,0)+Object.values(qtysB).reduce((a,b)=>a+b,0)+Object.values(qtysC).reduce((a,b)=>a+b,0);
+    const maxCap=CAPS.reduce((a,b)=>a+b,0);
+    if (totalNum===0) { card.style.display='none'; btn.disabled=true; allocation=null; allocSectionA=null; allocSectionB=null; allocSectionC=null; saveState(); return; }
+    card.style.display='block';
+    if (totalNum>maxCap) { out.innerHTML=`<div class="msg err" style="display:block">❌ Total ${totalNum} m³ > capacité (${maxCap} m³)</div>`; btn.disabled=true; allocation=null; saveState(); return; }
+    const ORDER=['A','B','C'];
+    const firstIdx=ORDER.indexOf(clientPremier);
+    const orderedSections=[ORDER[firstIdx],ORDER[(firstIdx+1)%3],ORDER[(firstIdx+2)%3]];
+    const qMap={A:qtysA,B:qtysB,C:qtysC};
+    const qtysFirst=qMap[orderedSections[0]], qtysSecond=qMap[orderedSections[1]], qtysThird=qMap[orderedSections[2]];
+    const result=allouerTriple(qtysFirst,qtysSecond,qtysThird);
+    if (!result) { out.innerHTML=`<div class="msg err" style="display:block">❌ Impossible avec contrainte sellette (3 clients).<br><small>Le 3ème client livré doit occuper cuve 1 ou 2.</small></div>`; btn.disabled=true; allocation=null; allocSectionA=null; allocSectionB=null; allocSectionC=null; saveState(); return; }
+    const aMap={};
+    aMap[orderedSections[0]]=result.allocFirst; aMap[orderedSections[1]]=result.allocSecond; aMap[orderedSections[2]]=result.allocThird;
+    allocSectionA=aMap['A']; allocSectionB=aMap['B']; allocSectionC=aMap['C'];
+    allocation=allocSectionA.map((v,i)=>v||allocSectionB[i]||allocSectionC[i]);
+    const sellOK=result.allocThird[0]!==null||result.allocThird[1]!==null;
+    const cm={};
+    [...prodsA,...prodsB,...prodsC].forEach((p,i)=>{ cm[p.nom]=cm[p.nom]||BADGE_COLORS[i%BADGE_COLORS.length]; });
+    const labelOf=s=>clientNames[s]||(s==='A'?'Client A':s==='B'?'Client B':'Client C');
+    let lA=0,lB=0,lC=0;
+    let html=`<table class="alloc-table"><tr><th>#</th><th>Cap.</th><th>Produit</th><th>Client</th></tr>`;
+    for (let i=0; i<9; i++) {
+      const sell=i===0||i===1;
+      let nom=null, sec=null;
+      if (allocSectionA[i]){ nom=allocSectionA[i]; sec='A'; lA+=CAPS[i]; }
+      else if (allocSectionB[i]){ nom=allocSectionB[i]; sec='B'; lB+=CAPS[i]; }
+      else if (allocSectionC[i]){ nom=allocSectionC[i]; sec='C'; lC+=CAPS[i]; }
+      if (nom) { const c=cm[nom]||BADGE_COLORS[0]; const posIdx=orderedSections.indexOf(sec); const posTag=posIdx===0?'🚚 1er':(posIdx===1?'2ème':'⚓ 3ème'); html+=`<tr><td><strong>${i+1}</strong>${sell?' <small style="color:#e0001b">⚓</small>':''}</td><td>${CAPS[i]}m³</td><td><span class="badge" style="${c}">${escHtml(nom)}</span></td><td><small>${posTag} ${labelOf(sec).split(' ')[0]}</small></td></tr>`; }
+      else { html+=`<tr class="empty"><td><strong>${i+1}</strong>${sell?' <small style="color:#e0001b">⚓</small>':''}</td><td>${CAPS[i]}m³</td><td><span class="badge b-vide">— vide</span></td><td></td></tr>`; }
+    }
+    html+=`</table>`;
+    html+=sellOK?`<div class="sellette-ok">⚓ Sellette OK — 3ème client (${labelOf(orderedSections[2]).split(' ')[0]}) sur cuve sellette</div>`:`<div class="sellette-warn">⚠️ Contrainte sellette non satisfaite</div>`;
+    html+=`<div class="alloc-foot"><strong>A</strong> ${lA}m³ · <strong>B</strong> ${lB}m³ · <strong>C</strong> ${lC}m³ · Total <strong>${lA+lB+lC}m³/${maxCap}m³</strong></div>`;
+    out.innerHTML=html; btn.disabled=!pdfBytes;
+
+  } else {
+    // ── Mode double ───────────────────────────────────────────────
+    const prodsA=getFormProducts('A'), prodsB=getFormProducts('B');
+    const qtysA=makeQtys(prodsA), qtysB=makeQtys(prodsB);
+    const totalNum=Object.values(qtysA).reduce((a,b)=>a+b,0)+Object.values(qtysB).reduce((a,b)=>a+b,0);
+    const maxCap=CAPS.reduce((a,b)=>a+b,0);
+    if (totalNum===0) { card.style.display='none'; btn.disabled=true; allocation=null; allocSectionA=null; allocSectionB=null; saveState(); return; }
+    card.style.display='block';
+    if (totalNum>maxCap) { out.innerHTML=`<div class="msg err" style="display:block">❌ Total ${totalNum} m³ > capacité (${maxCap} m³)</div>`; btn.disabled=true; allocation=null; saveState(); return; }
+    const qtysFirst =clientPremier==='A'?qtysA:qtysB;
+    const qtysSecond=clientPremier==='A'?qtysB:qtysA;
+    let result=allouerDouble(qtysFirst,qtysSecond,false);
+    let selletteForcee=false;
+    if (!result) {
+      // Fallback sans contrainte sellette
+      result=allouerDouble(qtysFirst,qtysSecond,true);
+      if (!result) { out.innerHTML=`<div class="msg err" style="display:block">❌ Impossible de répartir les produits (capacité insuffisante).</div>`; btn.disabled=true; allocation=null; allocSectionA=null; allocSectionB=null; saveState(); return; }
+      selletteForcee=true;
+    }
+    if (clientPremier==='A') { allocSectionA=result.allocFirst; allocSectionB=result.allocSecond; }
+    else { allocSectionA=result.allocSecond; allocSectionB=result.allocFirst; }
+    allocation=allocSectionA.map((v,i)=>v||allocSectionB[i]);
+    const sellOK=!selletteForcee&&(result.allocSecond[0]!==null||result.allocSecond[1]!==null);
+    const cm={};
+    [...prodsA,...prodsB].forEach((p,i)=>{ cm[p.nom]=cm[p.nom]||BADGE_COLORS[i%BADGE_COLORS.length]; });
+    const nFirst =clientPremier==='A'?(clientNames.A||'1er livré'):(clientNames.B||'1er livré');
+    const nSecond=clientPremier==='A'?(clientNames.B||'2ème'):(clientNames.A||'2ème');
+    let lFirst=0,lSecond=0;
+    let html=`<table class="alloc-table"><tr><th>#</th><th>Cap.</th><th>Produit</th><th>Client</th></tr>`;
+    for (let i=0; i<9; i++) {
+      const isS=result.allocSecond[i]!==null, isF=result.allocFirst[i]!==null;
+      const nom=isS?result.allocSecond[i]:(isF?result.allocFirst[i]:null);
+      const sell=i===0||i===1;
+      if (nom) { if(isS)lSecond+=CAPS[i]; else lFirst+=CAPS[i]; const c=cm[nom]||BADGE_COLORS[0]; const tag=isS?`<span class="mini-tag tag-second">⚓ ${nSecond.split(' ')[0]}</span>`:`<span class="mini-tag tag-premier">🚚 ${nFirst.split(' ')[0]}</span>`; html+=`<tr><td><strong>${i+1}</strong>${sell?' <small style="color:#e0001b">⚓</small>':''}</td><td>${CAPS[i]}m³</td><td><span class="badge" style="${c}">${escHtml(nom)}</span></td><td>${tag}</td></tr>`; }
+      else { html+=`<tr class="empty"><td><strong>${i+1}</strong>${sell?' <small style="color:#e0001b">⚓</small>':''}</td><td>${CAPS[i]}m³</td><td><span class="badge b-vide">— vide</span></td><td></td></tr>`; }
+    }
+    html+=`</table>`;
+    if (selletteForcee) { html+=`<div class="sellette-warn">⚠️ Sellette non respectée — vérifie l'ordre manuellement avant génération</div>`; }
+    else if (sellOK) { html+=`<div class="sellette-ok">⚓ Sellette OK — cuve ${result.allocSecond[0]?'1':'2'} chargée pour le 2ème client</div>`; }
+    else { html+=`<div class="sellette-warn">⚠️ Contrainte sellette non satisfaite</div>`; }
+    html+=`<div class="alloc-foot"><span>🚚 1er livré</span> <strong>${lFirst}m³</strong><span style="margin-left:8px">⚓ 2ème</span> <strong>${lSecond}m³</strong><span style="margin-left:8px">Total</span> <strong>${lFirst+lSecond}m³/${maxCap}m³</strong></div>`;
+    out.innerHTML=html; btn.disabled=!pdfBytes;
+  }
+  saveState();
+}
+
+// ── Génération PDF ────────────────────────────────────────────────
+async function genPDF() {
+  if (!pdfBytes||!allocation) return;
+  const btn=document.getElementById('genBtn'), msg=document.getElementById('genMsg');
+  btn.disabled=true; btn.textContent='⏳ Génération…'; msg.style.display='none';
+
+  try {
+    const {PDFDocument,StandardFonts} = PDFLib;
+    const doc   = await PDFDocument.load(pdfBytes);
+    const font  = await doc.embedFont(StandardFonts.Helvetica);
+    const fontB = await doc.embedFont(StandardFonts.HelveticaBold);
+    const sz=7, sz8=8;
+    const conducteur = document.getElementById('conducteur').value.trim() || 'Maxime';
+    const soussigne  = document.getElementById('soussigne').value.trim()  || 'Le Barbanchon Maxime';
+    const compte     = document.getElementById('compte').value.trim()     || 'Napoly';
+    const ville      = document.getElementById('ville').value.trim()      || 'Le Mans';
+    const dateStr    = document.getElementById('datebl').value.trim()     || todayFR();
+    const pages = doc.getPages();
+    const p1c = isDoubleDep ? P1D : P1;
+
+    function ctr(page,text,cx,y,f=font,s=sz) {
+      const w = f.widthOfTextAtSize(text,s);
+      page.drawText(text, {x:cx-w/2, y, size:s, font:f});
+    }
+
+    // Pages BL (2-5 ou 2-7) : cuves du client, "/" pour les autres en mode multi
+    function fillBLPage(pg, myAlloc, doubleMode=false) {
+      for (let i=0; i<9; i++) {
+        const cx=BLX[i], nom=myAlloc?myAlloc[i]:null;
+        ctr(pg, String(i+1), cx, BL.num, fontB);
+        if (nom) {
+          ctr(pg, String(CAPS[i]), cx, BL.vol, fontB);
+          ctr(pg, nom, cx, BL.prod, fontB);
+        } else if (doubleMode) {
+          ctr(pg, String(CAPS[i]), cx, BL.vol, fontB);   // capacité maintenue
+          ctr(pg, '/', cx, BL.prod, font, sz8);           // seul le produit est /
+        } else {
+          ctr(pg, String(CAPS[i]), cx, BL.vol, fontB);
+          ctr(pg, 'vide', cx, BL.prod, font);
+        }
+      }
+      pg.drawText(conducteur, {x:BL.nomX,  y:BL.nomY,  size:sz8, font:fontB});
+      pg.drawText(dateStr,    {x:BL.dateX, y:BL.dateY, size:sz8, font});
+    }
+
+    // Page 1 : Plan de chargement
+    if (pages.length > 0) {
+      const pg = pages[0];
+      for (let i=0; i<9; i++) {
+        const cx=P1X[i], nom=allocation[i];
+        ctr(pg, String(CAPS[i]), cx, p1c.cap,  fontB, sz8);
+        ctr(pg, '0',             cx, p1c.reste, font,  sz);
+        if (nom) {
+          ctr(pg, nom,            cx, p1c.produit,  fontB);
+          ctr(pg, nom,            cx, p1c.produit2, fontB);
+          ctr(pg, '7080',         cx, p1c.depot,    font);
+          ctr(pg, String(CAPS[i]),cx, p1c.qte,      fontB);
+        } else {
+          ctr(pg, 'vide', cx, p1c.produit,  font);
+          ctr(pg, 'vide', cx, p1c.produit2, font);
+        }
+      }
+      pg.drawText(soussigne, {x:p1c.nomX,    y:p1c.nomY,    size:sz8, font:fontB});
+      pg.drawText(compte,    {x:p1c.compteX, y:p1c.compteY, size:sz8, font:fontB});
+      pg.drawText(ville,     {x:p1c.villeX,  y:p1c.villeY,  size:sz8, font});
+      pg.drawText(dateStr,   {x:p1c.dateX,   y:p1c.dateY,   size:sz8, font});
+    }
+
+    // Pages BL
+    if (!isDoubleDep) {
+      for (let pi=1; pi<pages.length; pi++) fillBLPage(pages[pi], allocation, false);
+    } else {
+      for (let pi=1; pi<pages.length; pi++) {
+        const pageNum = pi+1;
+        let section = pageToSection[pageNum];
+        if (!section) section = (pi%2===1) ? 'A' : 'B';
+        const myAlloc = section==='A' ? allocSectionA : section==='B' ? allocSectionB : allocSectionC;
+        fillBLPage(pages[pi], myAlloc, true);
+      }
+      saveClientMemory(clientNames.A, getFormProducts('A'));
+      saveClientMemory(clientNames.B, getFormProducts('B'));
+      if (isTripleDep) saveClientMemory(clientNames.C, getFormProducts('C'));
+    }
+
+    const pdfOut = await doc.save();
+    const blob = new Blob([pdfOut], {type:'application/pdf'});
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    const stamp = new Date().toISOString().slice(0,10).replace(/-/g,'');
+    a.download = `BL_rempli_${stamp}.pdf`;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url), 3000);
+
+    msg.style.display='block'; msg.className='gen-msg msg ok';
+    msg.textContent='✅ BL généré !';
+    if (isDoubleDep) msg.innerHTML+='<br><small>💾 Clients mémorisés pour la prochaine fois.</small>';
+  } catch(e) {
+    msg.style.display='block'; msg.className='gen-msg msg err';
+    msg.textContent='❌ '+e.message; console.error(e);
+  }
+  btn.disabled=false; btn.textContent='📄 Générer le BL rempli';
+}
+
+function todayFR(){
+  const d=new Date();
+  return [d.getDate(),d.getMonth()+1,d.getFullYear()].map(n=>String(n).padStart(2,'0')).join('.');
+}
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js')
+      .then(r => console.log('[SW] enregistré:', r.scope))
+      .catch(e => console.warn('[SW] erreur:', e));
+  });
+}
+</script>
+</body>
+</html>
