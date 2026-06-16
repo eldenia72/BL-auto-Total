@@ -98,6 +98,23 @@ input[type=file]{display:none}
 .btn{display:block;width:100%;padding:15px;border:none;border-radius:12px;font-size:1rem;font-weight:700;cursor:pointer;transition:opacity .2s;text-align:center}
 .btn-gen{background:#e0001b;color:white;margin-top:10px}
 .btn-gen:disabled{opacity:.35;cursor:default}
+/* ── Paramètres citerne ── */
+.caps-grid{display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin-bottom:10px}
+.cap-cell{display:flex;flex-direction:column;align-items:center;gap:3px}
+.cap-cell label{font-size:.65rem;color:#888;font-weight:700}
+.cap-inp{width:100%;border:1.5px solid #ddd;border-radius:6px;font-size:.8rem;text-align:center;padding:6px 1px;-webkit-appearance:none;outline:none}
+.cap-inp:focus{border-color:#e0001b}
+.btn-gear{background:rgba(255,255,255,.2);border:none;border-radius:8px;padding:6px 10px;color:white;font-size:1.1rem;cursor:pointer;flex-shrink:0;line-height:1}
+/* ── Ajustement manuel ── */
+.btn-adjust{background:none;border:1.5px solid #e0001b;border-radius:8px;padding:7px 14px;font-size:.82rem;color:#e0001b;cursor:pointer;margin-top:10px;width:100%;font-weight:600}
+.manual-editor select{border:1.5px solid #ddd;border-radius:6px;font-size:.78rem;padding:3px 2px;outline:none;width:82px}
+.manual-editor select:focus{border-color:#e0001b}
+.man-foot{margin-top:8px;padding:7px 10px;background:#f5f5f5;border-radius:8px;font-size:.78rem}
+.man-row{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #eee}
+.man-row:last-child{border:none}
+.man-ok{color:#2e7d32;font-weight:700}.man-over{color:#c62828;font-weight:700}
+.btn-validate{background:#2e7d32;color:white;border:none;border-radius:8px;padding:9px;font-size:.88rem;font-weight:700;cursor:pointer;margin-top:8px;width:100%}
+.btn-back-auto{background:none;border:1.5px solid #aaa;border-radius:8px;padding:7px;font-size:.82rem;color:#666;cursor:pointer;margin-top:6px;width:100%}
 .btn-gen:active:not(:disabled){background:#b0001a}
 .gen-msg{margin-top:8px;padding:10px;border-radius:10px;font-size:.85rem;text-align:center;display:none}
 
@@ -110,10 +127,22 @@ input[type=file]{display:none}
 
   <div class="header">
     <div class="header-icon">🚛</div>
-    <div>
+    <div style="flex:1">
       <h1>BL Auto-Fill</h1>
-      <p>TotalEnergies · 9 compartiments · Cuves pleines</p>
+      <p>TotalEnergies · <span id="capsLabel">9 comp. · 41 m³</span> · Cuves pleines</p>
     </div>
+    <button class="btn-gear" onclick="toggleSettings()" title="Paramètres citerne">⚙️</button>
+  </div>
+
+  <!-- ⚙️ Paramètres citerne -->
+  <div class="card" id="settingsCard" style="display:none">
+    <div class="card-title" style="justify-content:space-between;margin-bottom:8px">
+      <span>⚙️ Compartiments citerne</span>
+      <button onclick="toggleSettings()" style="background:none;border:none;font-size:1rem;cursor:pointer;color:#aaa;padding:0">✕</button>
+    </div>
+    <div style="font-size:.76rem;color:#888;margin-bottom:8px">Capacité de chaque compartiment en m³ :</div>
+    <div class="caps-grid" id="capsGrid"></div>
+    <button class="btn btn-gen" style="margin-top:0;padding:10px" onclick="saveCaps()">💾 Sauvegarder</button>
   </div>
 
   <!-- ① Infos fixes -->
@@ -239,7 +268,7 @@ input[type=file]{display:none}
 pdfjsLib.GlobalWorkerOptions.workerSrc = '';
 
 // ── Constantes ────────────────────────────────────────────────────
-const CAPS = [4,6,5,2,3,9,3,2,7]; // capacités cuves 1-9
+let CAPS = loadCaps(); // capacités cuves 1-9 (configurable ⚙️)
 const SELLETTE_CUVES = [0, 1];     // indices cuves sellette (0=cuve1, 1=cuve2)
 
 // Couleurs badges produit
@@ -298,6 +327,7 @@ let prodRowCtr    = 0;
 
 // ── localStorage ──────────────────────────────────────────────────
 const LS_STATE   = 'bl_autofill_v2_state';
+const LS_CAPS    = 'bl_autofill_v2_caps';
 const LS_CLIENTS = 'bl_autofill_v2_clients';
 
 function saveState() {
@@ -393,6 +423,7 @@ function applyMemory(section, name) {
 // ── Init ──────────────────────────────────────────────────────────
 (function init() {
   document.getElementById('datebl').value = todayFR();
+  updateCapsLabel();
   const restored = loadState();
   if (!restored) showEmptyState(null);
   calcul();
@@ -933,6 +964,7 @@ function calcul() {
       else { html+=`<tr class="empty"><td><strong>${i+1}</strong></td><td>${CAPS[i]}m³</td><td><span class="badge b-vide">— vide</span></td></tr>`; }
     }
     html += `</table><div class="alloc-foot"><span>Chargé</span><strong>${loaded} m³ / ${maxCap} m³</strong></div>`;
+    html += `<button class="btn-adjust" onclick="openManualEditor()">✏️ Ajuster manuellement</button>`;
     out.innerHTML=html; btn.disabled=!pdfBytes;
 
   } else if (isTripleDep) {
@@ -1018,6 +1050,131 @@ function calcul() {
     html+=`<div class="alloc-foot"><span>🚚 1er livré</span> <strong>${lFirst}m³</strong><span style="margin-left:8px">⚓ 2ème</span> <strong>${lSecond}m³</strong><span style="margin-left:8px">Total</span> <strong>${lFirst+lSecond}m³/${maxCap}m³</strong></div>`;
     out.innerHTML=html; btn.disabled=!pdfBytes;
   }
+  saveState();
+}
+
+// ── Paramètres citerne ─────────────────────────────────────────────
+function loadCaps() {
+  try {
+    const s = JSON.parse(localStorage.getItem('bl_autofill_v2_caps'));
+    if (Array.isArray(s) && s.length === 9 && s.every(n => n >= 1 && n <= 30)) return s;
+  } catch(e) {}
+  return [4,6,5,2,3,9,3,2,7];
+}
+
+function updateCapsLabel() {
+  const total = CAPS.reduce((a,b)=>a+b,0);
+  const el = document.getElementById('capsLabel');
+  if (el) el.textContent = `9 comp. · ${total} m³`;
+}
+
+function toggleSettings() {
+  const card = document.getElementById('settingsCard');
+  const open = card.style.display !== 'none';
+  card.style.display = open ? 'none' : 'block';
+  if (!open) renderCapsGrid();
+}
+
+function renderCapsGrid() {
+  document.getElementById('capsGrid').innerHTML = CAPS.map((v,i) =>
+    `<div class="cap-cell"><label>C${i+1}</label>` +
+    `<input class="cap-inp" type="number" id="ci${i}" value="${v}" min="1" max="30"></div>`
+  ).join('');
+}
+
+function saveCaps() {
+  const vals = [];
+  for (let i=0; i<9; i++) {
+    const v = parseInt(document.getElementById('ci'+i)?.value);
+    if (!v || v < 1 || v > 30) { alert(`Compartiment ${i+1} : valeur invalide (1–30 m³)`); return; }
+    vals.push(v);
+  }
+  CAPS.splice(0, 9, ...vals);
+  localStorage.setItem(LS_CAPS, JSON.stringify(CAPS));
+  updateCapsLabel();
+  toggleSettings();
+  calcul();
+}
+
+// ── Ajustement manuel des cuves ─────────────────────────────────
+function openManualEditor() {
+  if (!allocation) return;
+  const prods = getFormProducts();
+  const out = document.getElementById('allocOut');
+  const cm = {};
+  prods.forEach((p,i) => { cm[p.nom] = cm[p.nom] || BADGE_COLORS[i % BADGE_COLORS.length]; });
+  const nomList = [...new Set(prods.map(p => p.nom))];
+
+  let html = `<div class="manual-editor">`;
+  html += `<table class="alloc-table"><tr><th>#</th><th>Cap.</th><th>Produit</th></tr>`;
+  for (let i=0; i<9; i++) {
+    const cur = allocation[i] || '';
+    const opts = [`<option value="">— vide</option>`,
+      ...nomList.map(n => `<option value="${n}" ${n===cur?'selected':''}>${n}</option>`)
+    ].join('');
+    const sell = (i===0||i===1) ? ' <small style="color:#e0001b">⚓</small>' : '';
+    html += `<tr><td><strong>${i+1}</strong>${sell}</td><td>${CAPS[i]}m³</td>`;
+    html += `<td><select id="ms${i}" onchange="updateManFoot()">${opts}</select></td></tr>`;
+  }
+  html += `</table>`;
+  html += `<div class="man-foot" id="manFoot"></div>`;
+  html += `<button class="btn-validate" onclick="validateManual()">✅ Valider cette répartition</button>`;
+  html += `<button class="btn-back-auto" onclick="calcul()">↩ Revenir au calcul auto</button>`;
+  html += `</div>`;
+  out.innerHTML = html;
+  document.getElementById('genBtn').disabled = true;
+  updateManFoot();
+}
+
+function updateManFoot() {
+  const prods = getFormProducts();
+  const placed = {};
+  for (let i=0; i<9; i++) {
+    const v = document.getElementById('ms'+i)?.value;
+    if (v) placed[v] = (placed[v]||0) + CAPS[i];
+  }
+  const foot = document.getElementById('manFoot');
+  if (!foot) return;
+  let html = '';
+  for (const p of prods) {
+    if (!p.qty) continue;
+    const done = placed[p.nom] || 0;
+    const diff = done - p.qty;
+    const cls = diff === 0 ? 'man-ok' : 'man-over';
+    html += `<div class="man-row"><span><strong>${p.nom}</strong> · cible ${p.qty} m³</span>`;
+    html += `<span class="${cls}">${done} m³${diff!==0?' ('+( diff>0?'+':'')+diff+')':' ✓'}</span></div>`;
+  }
+  const total = Object.values(placed).reduce((a,b)=>a+b,0);
+  html += `<div style="margin-top:5px;font-size:.8rem;color:#555">Total chargé : <strong>${total} / ${CAPS.reduce((a,b)=>a+b,0)} m³</strong></div>`;
+  foot.innerHTML = html;
+}
+
+function validateManual() {
+  const prods = getFormProducts();
+  const newAlloc = Array(9).fill(null);
+  for (let i=0; i<9; i++) {
+    const v = document.getElementById('ms'+i)?.value;
+    newAlloc[i] = v || null;
+  }
+  allocation = newAlloc;
+  const cm = {};
+  prods.forEach((p,i) => { cm[p.nom] = cm[p.nom] || BADGE_COLORS[i % BADGE_COLORS.length]; });
+  let loaded=0;
+  let html=`<table class="alloc-table"><tr><th>#</th><th>Cap.</th><th>Produit</th></tr>`;
+  for (let i=0; i<9; i++) {
+    if (allocation[i]) {
+      loaded += CAPS[i];
+      const c = cm[allocation[i]] || BADGE_COLORS[0];
+      html += `<tr><td><strong>${i+1}</strong></td><td>${CAPS[i]}m³</td><td><span class="badge" style="${c}">${escHtml(allocation[i])}</span></td></tr>`;
+    } else {
+      html += `<tr class="empty"><td><strong>${i+1}</strong></td><td>${CAPS[i]}m³</td><td><span class="badge b-vide">— vide</span></td></tr>`;
+    }
+  }
+  html += `</table><div class="alloc-foot"><span>Chargé</span><strong>${loaded} m³ / ${CAPS.reduce((a,b)=>a+b,0)} m³</strong></div>`;
+  html += `<div class="sellette-ok" style="color:#1565c0;background:#e3f2fd">✏️ Répartition ajustée manuellement</div>`;
+  html += `<button class="btn-adjust" onclick="openManualEditor()">✏️ Modifier à nouveau</button>`;
+  document.getElementById('allocOut').innerHTML = html;
+  document.getElementById('genBtn').disabled = !pdfBytes;
   saveState();
 }
 
