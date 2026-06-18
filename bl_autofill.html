@@ -61,6 +61,7 @@ input[type=file]{display:none}
 .nom-inp{width:80px;padding:6px 8px;border:1.5px solid #ddd;border-radius:6px;font-size:.88rem;font-weight:700;outline:none;background:white}
 .nom-inp:focus{border-color:#e0001b}
 .auto-badge{font-size:.65rem;padding:1px 5px;background:#e0001b;color:white;border-radius:4px;vertical-align:middle;margin-left:4px}
+.check-badge{font-size:.62rem;padding:1px 5px;background:#f59e0b;color:white;border-radius:4px;vertical-align:middle;margin-left:4px;font-weight:700}
 .qty-wrap{display:flex;align-items:center;gap:6px}
 .qty-inp{width:62px;padding:9px 6px;border:1.5px solid #ddd;border-radius:8px;font-size:1rem;text-align:center;outline:none;-webkit-appearance:none}
 .qty-inp:focus{border-color:#e0001b}
@@ -282,12 +283,110 @@ const BADGE_COLORS = [
   'background:#f0fdf4;color:#166534',
 ];
 
-// Codes produit Total → noms courts
+// Codes produit Total → noms courts (table de référence — ne jamais casser)
 const KNOWN_CODES = {
   'GOMO14FR'  : 'GO',
   'GOMO14FRA1': 'GO',  'GOMO14FRA2': 'GO1',  'GOMO14FRA3': 'GO+', 'GOMO14FRA4': 'GO+',
-  'MG9801FRA1': '98T', 'MG9513FRA1': 'E10T','MGETHA95FR': 'E85', 'MGOPTI14FR': 'GO+',
+  'MG9801FRA1': '98T', 'MG9513FRA1': 'E10T', 'MGETHA95FR': 'E85', 'MGOPTI14FR': 'GO+',
+  'MG9511FRA1': 'E5T',
 };
+
+// ── Détection robuste : résolveur code → nom court ────────────────
+// Objectif : reconnaître un produit MÊME si son code n'a jamais été vu.
+// Ordre de confiance : table fixe → table apprise → libellé du BL → structure
+// du code. Tout ce qui n'est pas certain est marqué pour vérification (badge
+// orange) et l'app apprend dès qu'un nom est confirmé via la feuille de tournée.
+const LS_CODEMAP = 'bl_autofill_v2_codemap';
+
+function loadLearnedCodes() {
+  try {
+    const s = JSON.parse(localStorage.getItem(LS_CODEMAP) || '{}');
+    if (s && typeof s === 'object') return s;
+  } catch(e) {}
+  return {};
+}
+let learnedCodes = loadLearnedCodes();
+
+function learnCode(code, nom) {
+  if (!code || !nom) return;
+  if (KNOWN_CODES[code]) return;            // ne touche pas à la table fixe
+  if (learnedCodes[code] === nom) return;
+  learnedCodes[code] = nom;
+  try { localStorage.setItem(LS_CODEMAP, JSON.stringify(learnedCodes)); } catch(e) {}
+  console.log('[apprentissage] code', code, '→', nom);
+}
+
+// Déduit un nom court à partir du libellé produit imprimé sur le BL
+// (ex: "Super Premier 95 E5" → E5). Secours uniquement, marqué incertain.
+function deriveFromLibelle(lib) {
+  if (!lib) return null;
+  const s = String(lib).toLowerCase();
+  if (/e\s?85|étha|etha/.test(s))                                    return 'E85';
+  if (/(sp|super)\s*98|\b98\b/.test(s))                              return '98';
+  if (/e\s?10|95.*e\s?10/.test(s))                                   return 'E10';
+  if (/e\s?5|95.*e\s?5|super.*95|sp.*95|sans.?plomb.*95|\b95\b/.test(s)) return 'E5';
+  if (/(gazole|gasoil|gas-?oil|diesel).*(premier|premium|excellium|opti|plus|\+)/.test(s)) return 'GO+';
+  if (/gnr|non\s*routier/.test(s))                                   return 'GNR';
+  if (/gazole|gasoil|gas-?oil|diesel/.test(s))                       return 'GO';
+  return null;
+}
+
+// Déduit un nom court à partir de la structure du code (secours, incertain)
+function deriveFromCode(code) {
+  if (!code) return null;
+  if (/^(GOOPTI|MGOPTI)/.test(code)) return 'GO+';
+  if (/^GO/.test(code))              return 'GO';
+  if (/^(MGETHA)|E85/.test(code))    return 'E85';
+  if (/^MG98/.test(code))            return '98';
+  if (/^MG9513/.test(code))          return 'E10';
+  if (/^MG9511/.test(code))          return 'E5';
+  return null;
+}
+
+// Résout un code → { nom, sure }. sure=true si table fixe/apprise, false si déduit.
+function resolveCode(code, libelle) {
+  if (KNOWN_CODES[code])  return { nom: KNOWN_CODES[code],  sure: true  };
+  if (learnedCodes[code]) return { nom: learnedCodes[code], sure: true  };
+  const d = deriveFromLibelle(libelle) || deriveFromCode(code);
+  if (d)                  return { nom: d, sure: false };
+  return null;
+}
+
+// Compat avec l'ancien usage KNOWN_CODES[code] : renvoie le nom (string) ou undefined.
+function nameOf(code, libelle) {
+  const r = resolveCode(code, libelle);
+  return r ? r.nom : undefined;
+}
+
+// Lit la colonne "Cumuls produits" de la feuille de tournée (page 1) : Total y
+// imprime déjà les noms courts (GO1, E5T, E10T, GO+) avec leur total m³.
+// C'est la source la plus fiable pour nommer un produit jamais vu.
+function extractCumulsLabeled(page1Items) {
+  if (!page1Items || !page1Items.length) return [];
+  const SHORT_RE = /^(?:GO\+?|GO\d|GNR|E\d{1,2}[A-Z]?|\d{2}[A-Z]?|SP\d{2}[A-Z]?)$/;
+  const NUM_RE   = /^\d{1,3}(?:[.,]\d+)?$/;
+  const maxX  = Math.max(...page1Items.map(i => i.x));
+  const right = page1Items.filter(i => i.x > maxX - 95);   // bande de droite
+  const names = right.filter(i => SHORT_RE.test(i.text) && /[A-Z]/.test(i.text) && i.text.length <= 5);
+  const nums  = right.filter(i => NUM_RE.test(i.text));
+  const out = [], usedNum = new Set();
+  for (const n of names) {
+    let best = null, bestD = 1e9, bestIdx = -1;
+    nums.forEach((q, idx) => {
+      if (usedNum.has(idx)) return;
+      const d = Math.abs(q.y - n.y);
+      if (d < bestD && d <= 22) { bestD = d; best = q; bestIdx = idx; }
+    });
+    if (best) {
+      const qty = Math.round(parseFloat(best.text.replace(',', '.')));
+      if (qty >= 1 && qty <= 45 && !out.some(o => o.nom === n.text)) {
+        usedNum.add(bestIdx); out.push({ nom: n.text, qty });
+      }
+    }
+  }
+  console.log('[cumuls feuille]', out.map(o => o.nom + '=' + o.qty).join(', ') || '(rien)');
+  return out;
+}
 
 // ── Coordonnées PDF (pdf-lib : y depuis le bas) ───────────────────
 const P1X = [347.6,384.0,421.5,459.75,497.65,535.9,573.75,610.1,647.6];
@@ -337,10 +436,10 @@ function saveState() {
       clientNameA: clientNames.A,
       clientNameB: clientNames.B,
       clientNameC: clientNames.C,
-      prodsA: getFormProducts('A').map(p=>({nom:p.nom,qty:p.qty})),
-      prodsB: getFormProducts('B').map(p=>({nom:p.nom,qty:p.qty})),
-      prodsC: getFormProducts('C').map(p=>({nom:p.nom,qty:p.qty})),
-      prods:  getFormProducts().map(p=>({nom:p.nom,qty:p.qty})),
+      prodsA: getFormProducts('A').map(p=>({nom:p.nom,qty:p.qty,code:p.code})),
+      prodsB: getFormProducts('B').map(p=>({nom:p.nom,qty:p.qty,code:p.code})),
+      prodsC: getFormProducts('C').map(p=>({nom:p.nom,qty:p.qty,code:p.code})),
+      prods:  getFormProducts().map(p=>({nom:p.nom,qty:p.qty,code:p.code})),
       at: Date.now()
     }));
   } catch(e) {}
@@ -365,12 +464,12 @@ function loadState() {
     document.getElementById('blocC').style.display        = isTripleDep ? '' : 'none';
 
     if (isDoubleDep) {
-      if (s.prodsA) s.prodsA.forEach(p => addProdRow(p.nom, p.qty, false, 'A'));
+      if (s.prodsA) s.prodsA.forEach(p => addProdRow(p.nom, p.qty, false, 'A', false, p.code));
       else showEmptyState('A');
-      if (s.prodsB) s.prodsB.forEach(p => addProdRow(p.nom, p.qty, false, 'B'));
+      if (s.prodsB) s.prodsB.forEach(p => addProdRow(p.nom, p.qty, false, 'B', false, p.code));
       else showEmptyState('B');
       if (isTripleDep) {
-        if (s.prodsC) s.prodsC.forEach(p => addProdRow(p.nom, p.qty, false, 'C'));
+        if (s.prodsC) s.prodsC.forEach(p => addProdRow(p.nom, p.qty, false, 'C', false, p.code));
         else showEmptyState('C');
         document.getElementById('clientNameC').textContent = clientNames.C;
       }
@@ -378,7 +477,7 @@ function loadState() {
       document.getElementById('clientNameB').textContent = clientNames.B;
       updateBlocHeaders();
     } else {
-      if (s.prods) s.prods.forEach(p => addProdRow(p.nom, p.qty, false, null));
+      if (s.prods) s.prods.forEach(p => addProdRow(p.nom, p.qty, false, null, false, p.code));
       else showEmptyState(null);
     }
     return true;
@@ -489,7 +588,7 @@ function showEmptyState(client) {
   }
 }
 
-function addProdRow(nom='', qty=0, isAuto=false, client=null) {
+function addProdRow(nom='', qty=0, isAuto=false, client=null, uncertain=false, code='') {
   const bodyId = client ? `prodFormBody${client}` : 'prodFormBody';
   const body   = document.getElementById(bodyId);
   body.querySelector('.empty-state')?.remove();
@@ -497,12 +596,16 @@ function addProdRow(nom='', qty=0, isAuto=false, client=null) {
   const div = document.createElement('div');
   div.className = 'prod-row';
   div.dataset.id = id; div.dataset.client = client || ''; div.id = 'row_' + id;
+  div.dataset.code = code || '';
+  const badge = uncertain
+    ? `<span class="check-badge" title="Nom déduit automatiquement — corrige-le si besoin, l'app retiendra">⚠ à vérifier</span>`
+    : (isAuto ? `<span class="auto-badge">auto</span>` : '');
   div.innerHTML = `
     <div class="prod-info">
       <input class="nom-inp" id="nom_${id}" type="text"
              value="${escHtml(nom)}" placeholder="GO, E85…"
-             onchange="calcul()" oninput="calcul()">
-      ${isAuto ? `<span class="auto-badge">auto</span>` : ''}
+             onchange="onNameEdited(${id});calcul()" oninput="calcul()">
+      ${badge}
     </div>
     <div class="qty-wrap">
       <input class="qty-inp" id="qty_${id}" type="number"
@@ -514,6 +617,29 @@ function addProdRow(nom='', qty=0, isAuto=false, client=null) {
     <button class="del-btn" type="button" onclick="delRow(${id})">✕</button>`;
   body.appendChild(div);
   calcul();
+}
+
+// Apprentissage : quand tu corriges à la main le nom d'un produit détecté,
+// l'app retient le code → ton nom (sauf codes de la table fixe, intouchables).
+function onNameEdited(id) {
+  const row = document.getElementById('row_' + id);
+  if (!row) return;
+  const code = row.dataset.code;
+  const nom  = (document.getElementById('nom_' + id)?.value || '').trim();
+  if (code && nom) {
+    learnCode(code, nom);
+    row.querySelector('.check-badge')?.remove();   // ligne confirmée
+  }
+}
+
+// Au moment de générer, on retient tous les codes détectés avec le nom affiché
+// (tu valides implicitement la répartition que tu t'apprêtes à signer).
+function learnFromVisibleRows() {
+  document.querySelectorAll('.prod-row[data-id]').forEach(row => {
+    const code = row.dataset.code;
+    const nom  = (document.getElementById('nom_' + row.dataset.id)?.value || '').trim();
+    if (code && nom) learnCode(code, nom);
+  });
 }
 
 function delRow(id) {
@@ -532,7 +658,7 @@ function getFormProducts(client=null) {
     const rid = row.dataset.id;
     const nom = (document.getElementById('nom_'+rid)?.value||'').trim();
     const qty = parseInt(document.getElementById('qty_'+rid)?.value)||0;
-    if (nom) out.push({nom, qty, colorIdx:idx});
+    if (nom) out.push({nom, qty, colorIdx:idx, code: row.dataset.code||''});
   });
   return out;
 }
@@ -554,15 +680,23 @@ function extractCumuls(page1Items) {
   const cumuls  = [];
   const codeItems = page1Items.filter(i => PROD_RE.test(i.text) && i.text.length >= 8);
   for (const ci of codeItems) {
-    const nom = KNOWN_CODES[ci.text];
+    const r = resolveCode(ci.text);
+    const nom = r ? r.nom : null;
     if (!nom) continue;
     const cands = page1Items
       .filter(i => Math.abs(i.y - ci.y) < 25 && i !== ci && QTY_RE.test(i.text))
       .sort((a,b) => Math.abs(a.x - ci.x) - Math.abs(b.x - ci.x));
     if (cands.length) {
       const qty = Math.round(parseFloat(cands[0].text.replace(',','.')));
-      if (qty >= 1 && qty <= 45 && !cumuls.some(c=>c.nom===nom)) cumuls.push({nom, qty});
+      if (qty >= 1 && qty <= 45 && !cumuls.some(c=>c.nom===nom)) cumuls.push({nom, qty, sure:r.sure});
     }
+  }
+  // Source la plus fiable : noms courts + totaux imprimés par Total (feuille de tournée)
+  const labeled = extractCumulsLabeled(page1Items);
+  for (const l of labeled) {
+    const ex = cumuls.find(c => c.nom === l.nom);
+    if (!ex) cumuls.push({nom:l.nom, qty:l.qty, sure:true});
+    else { ex.sure = true; if (!ex.qty) ex.qty = l.qty; }
   }
   return cumuls;
 }
@@ -598,6 +732,50 @@ function extractQtyPairs(items) {
   return pairs;
 }
 
+// Libellé produit = texte à droite du code, même ligne, avant la colonne quantité
+function readLibelle(pi, ci) {
+  return pi.filter(i => Math.abs(i.y - ci.y) < 5 && i.x > ci.x + 20 && i.x < 320)
+           .sort((a,b)=>a.x-b.x).map(i=>i.text).join(' ');
+}
+
+// Nom du client livré : 1ère ligne sous l'entête "Livraison" (secours : ancienne position)
+function readClientName(pi) {
+  const liv = pi.find(i => i.text === 'Livraison');
+  if (liv) {
+    const row = pi.filter(i => i.y < liv.y && i.y > liv.y - 20 && i.x > liv.x - 80 && i.x < liv.x + 135)
+                  .sort((a,b)=>a.x-b.x);
+    const nm = row.map(i=>i.text).join(' ').trim();
+    if (nm) return nm;
+  }
+  return pi.filter(i => i.x>620 && i.y>508 && i.y<548).sort((a,b)=>a.x-b.x).map(i=>i.text).join(' ').trim();
+}
+
+// Produits d'une page client : lecture ligne par ligne (code + libellé + quantité
+// COMMANDÉE par client). C'est la source fiable des quantités — surtout pas les
+// cumuls page 1 qui sont des totaux tous clients confondus.
+function readPageProducts(pi) {
+  const PROD_RE = /^[A-Z]{2,8}\d{2,6}[A-Z]{0,4}\d{0,2}$/;
+  const qtyPairs = extractQtyPairs(pi);
+  const codes = pi.filter(i => PROD_RE.test(i.text) && i.text.length >= 8 && nameOf(i.text, readLibelle(pi, i)))
+                  .sort((a,b)=> b.y - a.y);
+  const prods = [], usedQ = new Set();
+  for (const ci of codes) {
+    const lib = readLibelle(pi, ci);
+    const r = resolveCode(ci.text, lib);
+    const nom = r ? r.nom : null;
+    if (!nom) continue;
+    const qi = qtyPairs.map((q,idx)=>({...q,idx}))
+                       .filter(q => !usedQ.has(q.idx) && Math.abs(q.y - ci.y) <= 10)
+                       .sort((a,b)=>Math.abs(a.y-ci.y)-Math.abs(b.y-ci.y));
+    let qty = 0;
+    if (qi.length) { qty = qi[0].qty; usedQ.add(qi[0].idx); }
+    const ex = prods.find(p => p.nom === nom);
+    if (ex) ex.qty += qty;
+    else prods.push({ nom, qty, sure: r.sure, code: ci.text });
+  }
+  return prods;
+}
+
 function extractClientsFromBL(items, cumuls, numPages) {
   const PROD_RE = /^[A-Z]{2,8}\d{2,6}[A-Z]{0,4}\d{0,2}$/;
   const result  = [];
@@ -608,20 +786,19 @@ function extractClientsFromBL(items, cumuls, numPages) {
     const pi = items.filter(i => i.page === pageNum);
     if (!pi.length) continue;
 
-    // Nom client : y≈525 (pdf.js bas), x>620
-    const nameItems = pi.filter(i => i.x>620 && i.y>508 && i.y<548).sort((a,b)=>a.x-b.x);
-    const clientName = nameItems.map(i=>i.text).join(' ').trim();
+    // Nom du client livré (sous l'entête "Livraison")
+    const clientName = readClientName(pi);
 
     // Codes produit présents sur la page
     const pageCodes = new Set(pi.filter(i=>PROD_RE.test(i.text)&&i.text.length>=8).map(i=>i.text));
-    console.log(`[BL page ${pageNum}] codes:`, [...pageCodes].join('|'), '| nom:', clientName);
-
-    const QTY_RE_P = /^\d{1,3}(?:[.,]\d*)?$/;
     const nomSet = new Set();
-    for (const code of pageCodes) if (KNOWN_CODES[code]) nomSet.add(KNOWN_CODES[code]);
-    let prods = cumuls.filter(c => nomSet.has(c.nom));
+    for (const code of pageCodes) { const n = nameOf(code); if (n) nomSet.add(n); }
 
-    // Fallback 1 : matching via quantités dans les cumuls
+    // Source principale : lecture ligne par ligne (code + libellé + quantité par client)
+    let prods = readPageProducts(pi);
+    console.log(`[BL page ${pageNum}] "${clientName}" →`, prods.map(p=>p.nom+'='+p.qty+(p.sure?'':'?')).join(', ') || '(vide)');
+
+    // Fallback 1 : cumuls par quantité (page sans quantités lisibles)
     if (!prods.length && cumuls.length) {
       const norm = pi.filter(i=>i.y>180).map(i=>({...i, page:1}));
       const qtyPairs = extractQtyPairs(norm);
@@ -629,22 +806,9 @@ function extractClientsFromBL(items, cumuls, numPages) {
       prods = cumuls.filter(c => foundQtys.has(c.qty));
     }
 
-    // Fallback 2 : matcher codes ↔ quantités sur la même page (même y ±20pt)
+    // Fallback 2 : noms connus sans quantité (dernier recours, qty remplie ensuite)
     if (!prods.length && nomSet.size > 0) {
-      const qtyPairsP = extractQtyPairs(pi);
-      const codeItemsP = pi.filter(i => PROD_RE.test(i.text) && i.text.length >= 8 && KNOWN_CODES[i.text]);
-      const matchedP = [];
-      const usedQtyIdx = new Set();
-      for (const ci of codeItemsP) {
-        const nom = KNOWN_CODES[ci.text];
-        if (!nom) continue;
-        const idx = qtyPairsP.findIndex((q,k) => !usedQtyIdx.has(k) && Math.abs(q.y - ci.y) < 20);
-        if (idx >= 0) {
-          usedQtyIdx.add(idx);
-          if (!matchedP.some(m=>m.nom===nom)) matchedP.push({nom, qty: qtyPairsP[idx].qty});
-        }
-      }
-      prods = matchedP.length > 0 ? matchedP : [...nomSet].map(nom => ({nom, qty: 0}));
+      prods = [...nomSet].map(nom => ({nom, qty: 0}));
     }
 
     const section = SECTIONS[pageNum - 2];
@@ -668,9 +832,29 @@ function extractClientsFromBL(items, cumuls, numPages) {
 }
 
 // ── Upload + Extraction ───────────────────────────────────────────
+// Remet l'app à zéro AVANT de lire un nouveau PDF : évite que les produits /
+// quantités / clients du BL précédent restent affichés (bug "reprend les
+// quantités précédentes, il faut recharger pour capter le bon BL").
+function resetForNewPdf() {
+  allocation = null;
+  allocSectionA = null; allocSectionB = null; allocSectionC = null;
+  pageToSection = {};
+  clientNames = {A:'', B:'', C:''};
+  clearFormRows(null);
+  ['A','B','C'].forEach(s => {
+    clearFormRows(s);
+    const mb = document.getElementById('memBanner' + s); if (mb) mb.innerHTML = '';
+    const cn = document.getElementById('clientName' + s); if (cn) cn.textContent = '';
+  });
+  const card = document.getElementById('allocCard'); if (card) card.style.display = 'none';
+  const out  = document.getElementById('allocOut');  if (out)  out.innerHTML = '';
+  const gMsg = document.getElementById('genMsg');     if (gMsg) gMsg.style.display = 'none';
+}
+
 async function handleFile(input) {
   const file = input.files[0]; if(!file) return;
   pdfBytes = await file.arrayBuffer();
+  resetForNewPdf();
   document.getElementById('zone').classList.add('ok');
   document.getElementById('zoneLbl').textContent = '✅ ' + file.name;
   const prog=document.getElementById('prog'), bar=document.getElementById('bar'), msg=document.getElementById('extractMsg');
@@ -720,23 +904,23 @@ async function handleFile(input) {
       clearFormRows(null);
       let found = 0;
       if (cumuls.length > 0) {
-        for (const c of cumuls) { addProdRow(c.nom, c.qty, true, null); found++; }
+        for (const c of cumuls) { addProdRow(c.nom, c.qty, true, null, c.sure===false); found++; }
         msg.className='msg ok'; msg.textContent=`✅ ${found} produit(s) détectés${detectedDate?' · '+document.getElementById('datebl').value:''}`;
       } else {
-        // Matching exact : PROD_RE + KNOWN_CODES[text] pour éviter les collisions de préfixes
-        // (ex: 'GOMO14FR' incluait 'GOMO14FRA2' et volait sa quantité)
+        // Matching exact : PROD_RE + résolveur (table fixe/apprise/déduite)
         const PROD_RE_S = /^[A-Z]{2,8}\d{2,6}[A-Z]{0,4}\d{0,2}$/;
         const qtyPairs=extractQtyPairs(items), usedIdxs=new Set(), seenNoms=new Set();
-        const codeItemsS = items.filter(i => PROD_RE_S.test(i.text) && i.text.length>=8 && KNOWN_CODES[i.text]);
+        const codeItemsS = items.filter(i => PROD_RE_S.test(i.text) && i.text.length>=8 && nameOf(i.text));
         codeItemsS.sort((a,b)=>b.y-a.y);
         for (const ci of codeItemsS) {
-          const nom = KNOWN_CODES[ci.text];
+          const r = resolveCode(ci.text);
+          const nom = r ? r.nom : null;
           if (!nom || seenNoms.has(nom)) continue;
           const cands=qtyPairs.map((q,idx)=>({...q,idx})).filter(q=>q.page===ci.page&&!usedIdxs.has(q.idx));
           if (!cands.length) continue;
           cands.sort((a,b)=>Math.abs(a.y-ci.y)-Math.abs(b.y-ci.y));
           const best=cands[0];
-          if (Math.abs(best.y-ci.y)<=40) { addProdRow(nom,best.qty,true,null); usedIdxs.add(best.idx); seenNoms.add(nom); found++; }
+          if (Math.abs(best.y-ci.y)<=40) { addProdRow(nom,best.qty,true,null, r && !r.sure, ci.text); usedIdxs.add(best.idx); seenNoms.add(nom); found++; }
         }
         if (found > 0) { msg.className='msg info'; msg.textContent=`⚠️ ${found} produit(s) via codes — vérifie les noms`; }
         else { showEmptyState(null); msg.className='msg info'; msg.textContent='📝 Aucun produit détecté — saisis manuellement'; }
@@ -785,7 +969,7 @@ async function handleFile(input) {
       const fillBloc = (sec, cl) => {
         clearFormRows(sec);
         document.getElementById('memBanner'+sec).innerHTML = '';
-        if (cl.prods.length > 0) cl.prods.forEach(p=>addProdRow(p.nom,p.qty,true,sec));
+        if (cl.prods.length > 0) cl.prods.forEach(p=>addProdRow(p.nom,p.qty,true,sec, p.sure===false, p.code));
         else { showEmptyState(sec); const mem=getClientMemory(cl.clientName); if(mem) showMemBanner(sec,cl.clientName,mem); }
         document.getElementById('clientName'+sec).textContent = cl.clientName;
       };
@@ -1005,6 +1189,7 @@ function calcul() {
     html+=`</table>`;
     html+=sellOK?`<div class="sellette-ok">⚓ Sellette OK — 3ème client (${labelOf(orderedSections[2]).split(' ')[0]}) sur cuve sellette</div>`:`<div class="sellette-warn">⚠️ Contrainte sellette non satisfaite</div>`;
     html+=`<div class="alloc-foot"><strong>A</strong> ${lA}m³ · <strong>B</strong> ${lB}m³ · <strong>C</strong> ${lC}m³ · Total <strong>${lA+lB+lC}m³/${maxCap}m³</strong></div>`;
+    html+=`<button class="btn-adjust" onclick="openManualEditorMulti()">✏️ Ajuster manuellement</button>`;
     out.innerHTML=html; btn.disabled=!pdfBytes;
 
   } else {
@@ -1048,6 +1233,7 @@ function calcul() {
     else if (sellOK) { html+=`<div class="sellette-ok">⚓ Sellette OK — cuve ${result.allocSecond[0]?'1':'2'} chargée pour le 2ème client</div>`; }
     else { html+=`<div class="sellette-warn">⚠️ Contrainte sellette non satisfaite</div>`; }
     html+=`<div class="alloc-foot"><span>🚚 1er livré</span> <strong>${lFirst}m³</strong><span style="margin-left:8px">⚓ 2ème</span> <strong>${lSecond}m³</strong><span style="margin-left:8px">Total</span> <strong>${lFirst+lSecond}m³/${maxCap}m³</strong></div>`;
+    html+=`<button class="btn-adjust" onclick="openManualEditorMulti()">✏️ Ajuster manuellement</button>`;
     out.innerHTML=html; btn.disabled=!pdfBytes;
   }
   saveState();
@@ -1178,11 +1364,150 @@ function validateManual() {
   saveState();
 }
 
+// ── Ajustement manuel des cuves — mode double / triple ────────────
+function manualSections() { return isTripleDep ? ['A','B','C'] : ['A','B']; }
+function secArr(s) { return s==='A'?allocSectionA : s==='B'?allocSectionB : allocSectionC; }
+function labelOfSec(s) { return (clientNames[s] || ('Client '+s)).split(' ')[0] || ('Client '+s); }
+function orderedSecs() {
+  const ORDER=['A','B','C'];
+  const fi=ORDER.indexOf(clientPremier);
+  return isTripleDep ? [ORDER[fi],ORDER[(fi+1)%3],ORDER[(fi+2)%3]]
+                     : [clientPremier, clientPremier==='A'?'B':'A'];
+}
+
+// Options du menu déroulant : un produit par client (qualifié "sec|nom")
+function manualOptionsMulti() {
+  const opts = [];
+  manualSections().forEach(sec => {
+    const seen = new Set();
+    getFormProducts(sec).forEach(p => {
+      if (!p.qty || seen.has(p.nom)) return;
+      seen.add(p.nom);
+      opts.push({ value: sec+'|'+p.nom, label: p.nom+' · '+labelOfSec(sec) });
+    });
+  });
+  return opts;
+}
+function curCuveValueMulti(i) {
+  for (const s of ['A','B','C']) { const a=secArr(s); if (a && a[i]) return s+'|'+a[i]; }
+  return '';
+}
+function readManualMulti() {
+  const map = {A:Array(9).fill(null), B:Array(9).fill(null), C:Array(9).fill(null)};
+  for (let i=0;i<9;i++) {
+    const v = document.getElementById('ms'+i)?.value || '';
+    if (!v) continue;
+    const sep = v.indexOf('|');
+    const sec = v.slice(0,sep), nom = v.slice(sep+1);
+    if (map[sec]) map[sec][i] = nom;
+  }
+  return map;
+}
+
+function openManualEditorMulti() {
+  if (!isDoubleDep) return;
+  const out = document.getElementById('allocOut');
+  const opts = manualOptionsMulti();
+  let html = `<div class="manual-editor">`;
+  html += `<table class="alloc-table"><tr><th>#</th><th>Cap.</th><th>Produit · client</th></tr>`;
+  for (let i=0;i<9;i++) {
+    const cur = curCuveValueMulti(i);
+    const sell = (i===0||i===1) ? ' <small style="color:#e0001b">⚓</small>' : '';
+    const optionsHtml = [`<option value="">— vide</option>`]
+      .concat(opts.map(o => `<option value="${escHtml(o.value)}"${o.value===cur?' selected':''}>${escHtml(o.label)}</option>`))
+      .join('');
+    html += `<tr><td><strong>${i+1}</strong>${sell}</td><td>${CAPS[i]}m³</td>`;
+    html += `<td><select id="ms${i}" onchange="updateManFootMulti()">${optionsHtml}</select></td></tr>`;
+  }
+  html += `</table><div class="man-foot" id="manFoot"></div>`;
+  html += `<button class="btn-validate" onclick="validateManualMulti()">✅ Valider cette répartition</button>`;
+  html += `<button class="btn-back-auto" onclick="calcul()">↩ Revenir au calcul auto</button>`;
+  html += `</div>`;
+  out.innerHTML = html;
+  document.getElementById('genBtn').disabled = true;
+  updateManFootMulti();
+}
+
+function updateManFootMulti() {
+  const foot = document.getElementById('manFoot'); if (!foot) return;
+  const map = readManualMulti();
+  const placed = {};
+  ['A','B','C'].forEach(sec => {
+    for (let i=0;i<9;i++) { const nom=map[sec][i]; if (nom) { const k=sec+'|'+nom; placed[k]=(placed[k]||0)+CAPS[i]; } }
+  });
+  let html = '';
+  manualSections().forEach(sec => {
+    const seen=new Set();
+    getFormProducts(sec).forEach(p => {
+      if (!p.qty || seen.has(p.nom)) return; seen.add(p.nom);
+      const done=placed[sec+'|'+p.nom]||0, diff=done-p.qty;
+      const cls=diff===0?'man-ok':'man-over';
+      html += `<div class="man-row"><span><strong>${escHtml(p.nom)}</strong> · ${escHtml(labelOfSec(sec))} · cible ${p.qty} m³</span>`;
+      html += `<span class="${cls}">${done} m³${diff!==0?' ('+(diff>0?'+':'')+diff+')':' ✓'}</span></div>`;
+    });
+  });
+  const ord = orderedSecs();
+  const lastSec = ord[ord.length-1];
+  const sellOK = map[lastSec][0]!==null || map[lastSec][1]!==null;
+  html += `<div class="man-row" style="border:none"><span>⚓ Sellette</span><span class="${sellOK?'man-ok':'man-over'}">${sellOK?'OK':'à corriger'} — dernier livré (${escHtml(labelOfSec(lastSec))}) en cuve 1 ou 2</span></div>`;
+  const total=Object.values(placed).reduce((a,b)=>a+b,0);
+  html += `<div style="margin-top:5px;font-size:.8rem;color:#555">Total chargé : <strong>${total} / ${CAPS.reduce((a,b)=>a+b,0)} m³</strong></div>`;
+  foot.innerHTML = html;
+}
+
+function validateManualMulti() {
+  const map = readManualMulti();
+  allocSectionA = map.A;
+  allocSectionB = map.B;
+  allocSectionC = isTripleDep ? map.C : null;
+  allocation = allocSectionA.map((v,i)=> v || allocSectionB[i] || (isTripleDep ? allocSectionC[i] : null));
+  renderManualMultiSummary();
+  document.getElementById('genBtn').disabled = !pdfBytes;
+  saveState();
+}
+
+function renderManualMultiSummary() {
+  const out = document.getElementById('allocOut');
+  const ord = orderedSecs();
+  const cm = {};
+  [...getFormProducts('A'), ...getFormProducts('B'), ...(isTripleDep?getFormProducts('C'):[])]
+    .forEach((p,i)=>{ cm[p.nom]=cm[p.nom]||BADGE_COLORS[i%BADGE_COLORS.length]; });
+  const secOf = i => { for (const s of (isTripleDep?['A','B','C']:['A','B'])) { const a=secArr(s); if (a && a[i]) return s; } return null; };
+  const loaded = {};
+  let html = `<table class="alloc-table"><tr><th>#</th><th>Cap.</th><th>Produit</th><th>Client</th></tr>`;
+  for (let i=0;i<9;i++) {
+    const sell=(i===0||i===1);
+    const sec=secOf(i);
+    const nom=sec ? secArr(sec)[i] : null;
+    if (nom) {
+      loaded[sec]=(loaded[sec]||0)+CAPS[i];
+      const c=cm[nom]||BADGE_COLORS[0];
+      const pos=ord.indexOf(sec);
+      const posTag=pos===0?'🚚 1er':(pos===ord.length-1?(isTripleDep?'⚓ 3ème':'⚓ 2ème'):'2ème');
+      html += `<tr><td><strong>${i+1}</strong>${sell?' <small style="color:#e0001b">⚓</small>':''}</td><td>${CAPS[i]}m³</td><td><span class="badge" style="${c}">${escHtml(nom)}</span></td><td><small>${posTag} ${escHtml(labelOfSec(sec))}</small></td></tr>`;
+    } else {
+      html += `<tr class="empty"><td><strong>${i+1}</strong>${sell?' <small style="color:#e0001b">⚓</small>':''}</td><td>${CAPS[i]}m³</td><td><span class="badge b-vide">— vide</span></td><td></td></tr>`;
+    }
+  }
+  html += `</table>`;
+  const lastSec=ord[ord.length-1];
+  const sellOK=(secArr(lastSec)||[])[0]!=null || (secArr(lastSec)||[])[1]!=null;
+  html += sellOK
+    ? `<div class="sellette-ok">⚓ Sellette OK — dernier livré (${escHtml(labelOfSec(lastSec))}) en cuve 1 ou 2</div>`
+    : `<div class="sellette-warn">⚠️ Sellette : le dernier client livré n'occupe pas la cuve 1 ou 2</div>`;
+  html += `<div class="sellette-ok" style="color:#1565c0;background:#e3f2fd">✏️ Répartition ajustée manuellement</div>`;
+  const parts = manualSections().map(s=>`<strong>${escHtml(labelOfSec(s))}</strong> ${loaded[s]||0}m³`).join(' · ');
+  html += `<div class="alloc-foot">${parts} · Total <strong>${Object.values(loaded).reduce((a,b)=>a+b,0)}m³/${CAPS.reduce((a,b)=>a+b,0)}m³</strong></div>`;
+  html += `<button class="btn-adjust" onclick="openManualEditorMulti()">✏️ Modifier à nouveau</button>`;
+  out.innerHTML = html;
+}
+
 // ── Génération PDF ────────────────────────────────────────────────
 async function genPDF() {
   if (!pdfBytes||!allocation) return;
   const btn=document.getElementById('genBtn'), msg=document.getElementById('genMsg');
   btn.disabled=true; btn.textContent='⏳ Génération…'; msg.style.display='none';
+  learnFromVisibleRows();   // retient les codes produit avec le nom affiché
 
   try {
     const {PDFDocument,StandardFonts} = PDFLib;
@@ -1291,9 +1616,27 @@ function todayFR(){
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js')
-      .then(r => console.log('[SW] enregistré:', r.scope))
-      .catch(e => console.warn('[SW] erreur:', e));
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      console.log('[SW] enregistré:', reg.scope);
+      reg.update();
+      // Re-vérifie une mise à jour à chaque retour sur l'app
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update();
+      });
+      // Nouvelle version installée → on l'applique en rechargeant,
+      // mais jamais pendant qu'un BL est en cours de traitement.
+      reg.addEventListener('updatefound', () => {
+        const sw = reg.installing;
+        if (!sw) return;
+        sw.addEventListener('statechange', () => {
+          if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+            const blEnCours = (typeof pdfBytes !== 'undefined' && pdfBytes);
+            if (!blEnCours) { console.log('[SW] nouvelle version — rechargement'); window.location.reload(); }
+            else console.log('[SW] maj prête, appliquée au prochain lancement (BL en cours)');
+          }
+        });
+      });
+    }).catch(e => console.warn('[SW] erreur:', e));
   });
 }
 </script>
