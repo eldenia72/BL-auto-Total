@@ -780,7 +780,9 @@ function extractClientsFromBL(items, cumuls, numPages) {
   const PROD_RE = /^[A-Z]{2,8}\d{2,6}[A-Z]{0,4}\d{0,2}$/;
   const result  = [];
   const SECTIONS = ['A','B','C'];
-  const maxClientPage = numPages >= 7 ? 4 : 3;
+  // 1 client par BL ; la 2e moitié des pages = copies. 3p→1 client, 5p→2, 7p→3.
+  const nClients = Math.max(1, Math.round((numPages - 1) / 2));
+  const maxClientPage = 1 + nClients;
 
   for (let pageNum=2; pageNum<=maxClientPage && pageNum<=numPages; pageNum++) {
     const pi = items.filter(i => i.page === pageNum);
@@ -891,13 +893,17 @@ async function handleFile(input) {
     const cumuls = extractCumuls(items.filter(i=>i.page===1));
     bar.style.width='80%';
 
-    // Auto-activation mode multi-client pour BL 5 ou 7 pages (Total standard)
-    if (pdf.numPages===5 || pdf.numPages===7) {
-      isDoubleDep = true;
-      document.getElementById('doubleDepotage').checked = true;
-      document.getElementById('singleMode').style.display = 'none';
-      document.getElementById('doubleMode').style.display = '';
-    }
+    // Mode auto selon le nombre de pages (standard Total : 3 = simple, 5 = double,
+    // 7 = triple). On force AUSSI le retour en simple : sinon un BL simple chargé
+    // après un double restait en double et lisait la copie comme un 2e client
+    // (même client dupliqué → total ×2).
+    const wantMulti = (pdf.numPages===5 || pdf.numPages===7);
+    isDoubleDep = wantMulti;
+    if (!wantMulti) isTripleDep = false;
+    document.getElementById('doubleDepotage').checked = wantMulti;
+    document.getElementById('singleMode').style.display = wantMulti ? 'none' : '';
+    document.getElementById('doubleMode').style.display = wantMulti ? '' : 'none';
+    if (!wantMulti) document.getElementById('blocC').style.display = 'none';
 
     if (!isDoubleDep) {
       // ── Mode simple ───────────────────────────────────────────
