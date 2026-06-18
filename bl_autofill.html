@@ -1183,11 +1183,11 @@ function calcul() {
       if (allocSectionA[i]){ nom=allocSectionA[i]; sec='A'; lA+=CAPS[i]; }
       else if (allocSectionB[i]){ nom=allocSectionB[i]; sec='B'; lB+=CAPS[i]; }
       else if (allocSectionC[i]){ nom=allocSectionC[i]; sec='C'; lC+=CAPS[i]; }
-      if (nom) { const c=cm[nom]||BADGE_COLORS[0]; const posIdx=orderedSections.indexOf(sec); const posTag=posIdx===0?'🚚 1er':(posIdx===1?'2ème':'⚓ 3ème'); html+=`<tr><td><strong>${i+1}</strong>${sell?' <small style="color:#e0001b">⚓</small>':''}</td><td>${CAPS[i]}m³</td><td><span class="badge" style="${c}">${escHtml(nom)}</span></td><td><small>${posTag} ${labelOf(sec).split(' ')[0]}</small></td></tr>`; }
+      if (nom) { const c=cm[nom]||BADGE_COLORS[0]; const posIdx=orderedSections.indexOf(sec); const posTag=posIdx===0?'🚚 1er':(posIdx===1?'2ème':'⚓ 3ème'); html+=`<tr><td><strong>${i+1}</strong>${sell?' <small style="color:#e0001b">⚓</small>':''}</td><td>${CAPS[i]}m³</td><td><span class="badge" style="${c}">${escHtml(nom)}</span></td><td><small>${posTag} ${clientShortLabel(labelOf(sec))}</small></td></tr>`; }
       else { html+=`<tr class="empty"><td><strong>${i+1}</strong>${sell?' <small style="color:#e0001b">⚓</small>':''}</td><td>${CAPS[i]}m³</td><td><span class="badge b-vide">— vide</span></td><td></td></tr>`; }
     }
     html+=`</table>`;
-    html+=sellOK?`<div class="sellette-ok">⚓ Sellette OK — 3ème client (${labelOf(orderedSections[2]).split(' ')[0]}) sur cuve sellette</div>`:`<div class="sellette-warn">⚠️ Contrainte sellette non satisfaite</div>`;
+    html+=sellOK?`<div class="sellette-ok">⚓ Sellette OK — 3ème client (${clientShortLabel(labelOf(orderedSections[2]))}) sur cuve sellette</div>`:`<div class="sellette-warn">⚠️ Contrainte sellette non satisfaite</div>`;
     html+=`<div class="alloc-foot"><strong>A</strong> ${lA}m³ · <strong>B</strong> ${lB}m³ · <strong>C</strong> ${lC}m³ · Total <strong>${lA+lB+lC}m³/${maxCap}m³</strong></div>`;
     html+=`<button class="btn-adjust" onclick="openManualEditorMulti()">✏️ Ajuster manuellement</button>`;
     out.innerHTML=html; btn.disabled=!pdfBytes;
@@ -1225,7 +1225,7 @@ function calcul() {
       const isS=result.allocSecond[i]!==null, isF=result.allocFirst[i]!==null;
       const nom=isS?result.allocSecond[i]:(isF?result.allocFirst[i]:null);
       const sell=i===0||i===1;
-      if (nom) { if(isS)lSecond+=CAPS[i]; else lFirst+=CAPS[i]; const c=cm[nom]||BADGE_COLORS[0]; const tag=isS?`<span class="mini-tag tag-second">⚓ ${nSecond.split(' ')[0]}</span>`:`<span class="mini-tag tag-premier">🚚 ${nFirst.split(' ')[0]}</span>`; html+=`<tr><td><strong>${i+1}</strong>${sell?' <small style="color:#e0001b">⚓</small>':''}</td><td>${CAPS[i]}m³</td><td><span class="badge" style="${c}">${escHtml(nom)}</span></td><td>${tag}</td></tr>`; }
+      if (nom) { if(isS)lSecond+=CAPS[i]; else lFirst+=CAPS[i]; const c=cm[nom]||BADGE_COLORS[0]; const tag=isS?`<span class="mini-tag tag-second">⚓ ${clientShortLabel(nSecond)}</span>`:`<span class="mini-tag tag-premier">🚚 ${clientShortLabel(nFirst)}</span>`; html+=`<tr><td><strong>${i+1}</strong>${sell?' <small style="color:#e0001b">⚓</small>':''}</td><td>${CAPS[i]}m³</td><td><span class="badge" style="${c}">${escHtml(nom)}</span></td><td>${tag}</td></tr>`; }
       else { html+=`<tr class="empty"><td><strong>${i+1}</strong>${sell?' <small style="color:#e0001b">⚓</small>':''}</td><td>${CAPS[i]}m³</td><td><span class="badge b-vide">— vide</span></td><td></td></tr>`; }
     }
     html+=`</table>`;
@@ -1367,7 +1367,19 @@ function validateManual() {
 // ── Ajustement manuel des cuves — mode double / triple ────────────
 function manualSections() { return isTripleDep ? ['A','B','C'] : ['A','B']; }
 function secArr(s) { return s==='A'?allocSectionA : s==='B'?allocSectionB : allocSectionC; }
-function labelOfSec(s) { return (clientNames[s] || ('Client '+s)).split(' ')[0] || ('Client '+s); }
+// Libellé client court et parlant : saute les formes juridiques (SARL, SAS…)
+// pour distinguer deux clients dont la raison sociale commence pareil.
+function clientShortLabel(name) {
+  if (!name) return '';
+  const FORMS = new Set(['SARL','SAS','SASU','SA','EURL','SCI','SNC','SCEA','SCA','SELARL','SELAS','GIE','EARL','GAEC','SE','ETS','STE']);
+  const words = String(name).trim().split(/\s+/).filter(Boolean);
+  let i = 0;
+  while (i < words.length && FORMS.has(words[i].toUpperCase().replace(/[.,]/g,''))) i++;
+  let label = words[i] || words[0] || '';
+  if (label === '/' && words[i+1]) label = words[i+1];   // ex: "SARL / REL. ..."
+  return label;
+}
+function labelOfSec(s) { return clientShortLabel(clientNames[s]) || ('Client '+s); }
 function orderedSecs() {
   const ORDER=['A','B','C'];
   const fi=ORDER.indexOf(clientPremier);
